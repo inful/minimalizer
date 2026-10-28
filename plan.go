@@ -397,7 +397,7 @@ func prepareDir(dir string) ([]string, error) {
 	}
 	// The folder is ours, or it holds nothing but the temporary files of a
 	// run that was killed. Those are empty as far as the user is concerned.
-	leftovers, onlyLeftovers, err := scanTree(dir)
+	leftovers, onlyLeftovers, err := scanTree(dir, ours)
 	if err != nil {
 		return nil, err
 	}
@@ -410,9 +410,11 @@ func prepareDir(dir string) ([]string, error) {
 // scanTree walks dir once. It returns the temporary files of a run that was
 // killed and whether the folder holds nothing else.
 //
-// The walk goes through the whole tree: a leftover can sit in any folder,
-// and the walk has to see all of them to delete all of them.
-func scanTree(dir string) (leftovers []string, onlyLeftovers bool, err error) {
+// keepGoing says whether every leftover has to be found. It is needed when
+// the folder is the tool's own, because a leftover can sit in any folder.
+// Otherwise the walk stops at the first file that is not a leftover: the
+// answer is known then, and refusing must not walk the whole machine.
+func scanTree(dir string, keepGoing bool) (leftovers []string, onlyLeftovers bool, err error) {
 	onlyLeftovers = true
 	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -429,6 +431,9 @@ func scanTree(dir string) (leftovers []string, onlyLeftovers bool, err error) {
 			return nil
 		}
 		onlyLeftovers = false
+		if !keepGoing {
+			return fs.SkipAll
+		}
 		return nil
 	})
 	if err != nil {
