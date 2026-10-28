@@ -11,9 +11,10 @@ import (
 
 func TestDefaultLoaderHasNoLoaderForAnotherMachine(t *testing.T) {
 	// A loader of another architecture would answer with a wrong list, so
-	// the stage has to be reported as not having a loader at all.
-	if _, err := defaultLoader(elf.EM_386); err == nil {
-		t.Error("defaultLoader(EM_386) found a loader, want none")
+	// the stage has to be reported as not having a loader at all. PowerPC
+	// is used because no runner has a loader for it.
+	if _, err := defaultLoader(elf.EM_PPC64); err == nil {
+		t.Error("defaultLoader(EM_PPC64) found a loader, want none")
 	}
 }
 
