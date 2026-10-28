@@ -137,6 +137,19 @@ jobs:
           provenance: false
           sbom: false
 
+      - name: Build the release image
+        # Dockerfile.goreleaser builds the published image, and only
+        # GoReleaser uses it, at tag time. A typo in it would wait for the
+        # next release.
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rel/linux/amd64
+          go build -trimpath -o /tmp/rel/linux/amd64/minimalizer .
+          docker build -f Dockerfile.goreleaser \
+            --build-arg TARGETPLATFORM=linux/amd64 \
+            -t minimalizer-release-test /tmp/rel
+          docker run --rm minimalizer-release-test --version
+
       - name: Build the image the tool describes
         # The statement the tool prints is the product. It is built here,
         # from the statement itself and not from a hand written Dockerfile,
