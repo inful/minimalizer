@@ -104,7 +104,12 @@ func TestValidate(t *testing.T) {
 		{
 			name: "a stage name with a space",
 			opts: options{stage: "a b", binaries: []string{bin}},
-			want: "Dockerfile line",
+			want: "not a Docker stage name",
+		},
+		{
+			name: "a stage name with a bracket",
+			opts: options{stage: "build[1", binaries: []string{bin}},
+			want: "not a Docker stage name",
 		},
 		{
 			name: "a stage name with a colon",

@@ -109,12 +109,11 @@ func validate(opts *options) error {
 	if strings.Contains(opts.stage, "/") {
 		return errors.New("the stage name cannot contain a slash")
 	}
-	if err := checkWord("stage name", opts.stage); err != nil {
-		return err
-	}
 	if !reStageName.MatchString(opts.stage) {
 		// A name Docker cannot use as a stage, for example one with a
-		// colon: Docker would read it as the name of an image.
+		// colon: Docker would read it as the name of an image. The rule
+		// is stricter than the one for a Dockerfile line, so it answers
+		// for every character a stage name may not hold.
 		return fmt.Errorf("the stage name %q is not a Docker stage name (letters, digits, _ . and - only)", opts.stage)
 	}
 	if opts.packageDir != "" {
