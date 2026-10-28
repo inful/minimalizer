@@ -147,6 +147,8 @@ deduplicated. A statically linked binary produces no statements - unless
 
 `--package` writes the needed files into a directory, laid out exactly as they
 have to be in the final image, and prints the statement that moves them there.
+The flag takes no value: the binaries are the arguments, and the tree goes to
+`/rootfs` unless you write `--package=DIR`.
 Everything keeps the path it has in the builder - the libraries because that
 is where the loader looks for them, the binary for the same reason: two
 binaries with the same name in different folders do not overwrite each
@@ -221,7 +223,7 @@ The trailing `RUN` prints the statements to the build log; copy them into the
 final stage, or generate the whole final stage in one go:
 
 ```dockerfile
-RUN { echo "FROM scratch"; echo "COPY --from=builder /rootfs/ /"; \
+RUN { echo "FROM scratch"; \
       minimalizer --package /app | grep '^COPY'; } > /out/Dockerfile
 ```
 
