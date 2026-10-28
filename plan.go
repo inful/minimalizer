@@ -125,7 +125,7 @@ func warnNeedsCache(libs []lib, paths map[string]searchPaths) {
 		}
 		for _, bin := range l.usedBy {
 			if needsCache(l, paths[bin]) {
-				fmt.Fprintf(os.Stderr, "minimalizer: warning: %s is outside the loader's default search path of %s, the image may need --ld-cache\n", l.dest, bin)
+				fmt.Fprintf(os.Stderr, "minimalizer: warning: %s is only found through the loader cache, the image may need --ld-cache to run %s\n", l.dest, bin)
 				break
 			}
 		}
