@@ -160,18 +160,13 @@ func merge(byDest map[string]lib, deps []dep, bin string) error {
 // resolve turns an ldd entry into a copy instruction: the destination is the
 // path the dynamic loader looks for, the source is the real file behind any
 // symlink, because kaniko does not copy symlinks.
+//
+// The paths are not checked here: whether they can be written in a Dockerfile
+// line depends on the mode the tool runs in.
 func resolve(d dep) (lib, error) {
-	if strings.ContainsAny(d.path, badPathChars) {
-		return lib{}, fmt.Errorf("unsupported library path %q", d.path)
-	}
 	resolved, err := filepath.EvalSymlinks(d.path)
 	if err != nil {
 		return lib{}, fmt.Errorf("cannot resolve %s: %w", d.path, err)
-	}
-	// The real file is what the COPY statement names, so it has to be
-	// printable in a Dockerfile line as well.
-	if strings.ContainsAny(resolved, badPathChars) {
-		return lib{}, fmt.Errorf("unsupported library path %q", resolved)
 	}
 	fi, err := os.Stat(resolved)
 	if err != nil {
@@ -261,6 +256,22 @@ func checkWord(what, value string) error {
 	return nil
 }
 
+// checkCopyPath refuses a path that cannot be written in a COPY line.
+func checkCopyPath(path string) error {
+	if strings.ContainsAny(path, badPathChars) {
+		return fmt.Errorf("unsupported library path %q", path)
+	}
+	return nil
+}
+
+// checkCommentPath refuses a path that cannot be written in a comment.
+func checkCommentPath(path string) error {
+	if strings.ContainsAny(path, badCommentChars) {
+		return fmt.Errorf("the library path %q cannot be used in a Dockerfile comment", path)
+	}
+	return nil
+}
+
 // label describes a library in the generated comments.
 func label(l lib) string {
 	switch l.kind {
@@ -273,8 +284,17 @@ func label(l lib) string {
 	}
 }
 
-// writeComments prints one comment line per library.
+// writeComments prints one comment line per library. The paths are only in
+// comments here, so a space in one is fine; a newline is not.
 func writeComments(w io.Writer, libs []lib) error {
+	for _, l := range libs {
+		if err := checkCommentPath(l.dest); err != nil {
+			return err
+		}
+		if err := checkCommentPath(l.src); err != nil {
+			return err
+		}
+	}
 	for _, l := range libs {
 		if _, err := fmt.Fprintf(w, "# %s %s <- %s\n", label(l), l.dest, l.src); err != nil {
 			return err
@@ -284,8 +304,17 @@ func writeComments(w io.Writer, libs []lib) error {
 }
 
 // writeDockerfile prints comments and COPY statements that can be pasted into
-// a Dockerfile.
+// a Dockerfile. Here the paths go into COPY lines, so they have to be
+// printable in one.
 func writeDockerfile(w io.Writer, libs []lib, stage string) error {
+	for _, l := range libs {
+		if err := checkCopyPath(l.dest); err != nil {
+			return err
+		}
+		if err := checkCopyPath(l.src); err != nil {
+			return err
+		}
+	}
 	if err := writeComments(w, libs); err != nil {
 		return err
 	}
@@ -524,6 +553,14 @@ type jsonReport struct {
 func writeJSON(w io.Writer, binaries []string, libs []lib, stage string) error {
 	report := jsonReport{Binaries: binaries, Libraries: make([]jsonLib, 0, len(libs))}
 	for _, l := range libs {
+		// The copy field is a Dockerfile line, so the paths have to be
+		// printable in one.
+		if err := checkCopyPath(l.dest); err != nil {
+			return err
+		}
+		if err := checkCopyPath(l.src); err != nil {
+			return err
+		}
 		report.Libraries = append(report.Libraries, jsonLib{
 			Kind:     l.kind,
 			Soname:   l.soname,

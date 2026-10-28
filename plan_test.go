@@ -57,15 +57,17 @@ func TestResolveMarksInterpreter(t *testing.T) {
 	}
 }
 
-func TestResolveRejectsPathsThatBreakTheDockerfile(t *testing.T) {
+func TestWriteDockerfileRejectsPathsThatBreakIt(t *testing.T) {
 	for _, path := range []string{"/lib/with space.so", "/lib/with#hash.so", "/lib/with$dollar.so", "/lib/with\"quote.so"} {
-		if _, err := resolve(dep{path: path}); err == nil {
-			t.Errorf("resolve(%q) did not fail", path)
+		libs := []lib{{kind: kindLib, soname: "libfoo.so", dest: path, src: path}}
+		var sb strings.Builder
+		if err := writeDockerfile(&sb, libs, "builder"); err == nil {
+			t.Errorf("writeDockerfile() did not fail on %q", path)
 		}
 	}
 }
 
-func TestResolveRejectsRealPathsThatBreakTheDockerfile(t *testing.T) {
+func TestWriteDockerfileRejectsRealPathsThatBreakIt(t *testing.T) {
 	// The real file behind the symlink is what the COPY statement names,
 	// so it has to be printable in a Dockerfile line as well.
 	dir := t.TempDir()
@@ -78,8 +80,31 @@ func TestResolveRejectsRealPathsThatBreakTheDockerfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := resolve(dep{soname: "libfoo.so.1", path: link}); err == nil {
-		t.Error("resolve() did not fail on a real path with a space")
+	libs := []lib{{kind: kindLib, soname: "libfoo.so.1", dest: "/lib/libfoo.so.1", src: target}}
+	var sb strings.Builder
+	if err := writeDockerfile(&sb, libs, "builder"); err == nil {
+		t.Error("writeDockerfile() did not fail on a real path with a space")
+	}
+}
+
+func TestWritePackageAcceptsAPathWithASpace(t *testing.T) {
+	// In the package mode the paths only go into comments, and the tree is
+	// moved with one statement, so a space in a path is fine.
+	libs := []lib{{kind: kindLib, soname: "libfoo.so", dest: "/opt/my libs/libfoo.so", src: "/opt/my libs/libfoo.so"}}
+	var sb strings.Builder
+	if err := writePackage(&sb, libs, nil, "/out/rootfs", "builder"); err != nil {
+		t.Errorf("writePackage() error = %v, want none", err)
+	}
+	if !strings.Contains(sb.String(), "COPY --from=builder /out/rootfs/ /") {
+		t.Errorf("output = %q, want the statement for the tree", sb.String())
+	}
+}
+
+func TestWriteJSONRejectsPathsThatBreakTheCopyLine(t *testing.T) {
+	libs := []lib{{kind: kindLib, soname: "libfoo.so", dest: "/opt/my libs/libfoo.so", src: "/opt/my libs/libfoo.so"}}
+	var sb strings.Builder
+	if err := writeJSON(&sb, []string{"/out/app"}, libs, "builder"); err == nil {
+		t.Error("writeJSON() did not fail on a path with a space")
 	}
 }
 
