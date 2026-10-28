@@ -1,0 +1,101 @@
+# goreleaser configuration for github.com/inful/minimalizer.
+#
+# The tool asks a binary's ELF interpreter for its libraries, so it only
+# works on Linux. Only Linux binaries are shipped: a macOS or Windows build
+# would install a binary that answers "minimalizer only runs on Linux".
+# The CI matrix still compiles every platform, so platform-specific
+# breakage surfaces before a release.
+#
+# Draft by default so the maintainer can read the notes before publishing.
+# Docs: https://goreleaser.com/customization/
+version: 2
+
+project_name: minimalizer
+
+before:
+  hooks:
+    # Same suite CI runs, so a regression is caught at tag time rather
+    # than by a user downloading the artefact.
+    - go mod tidy
+    - go test -race -count=1 ./...
+
+builds:
+  - id: minimalizer
+    main: .
+    binary: minimalizer
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      # main.go declares `var version = "dev"` and overrides it here.
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    goarm:
+      - "7"
+    # Each build gets its own output directory (dist/minimalizer_<os>_<arch>/).
+    # Without it every build overwrites dist/minimalizer, and because the
+    # archives are assembled after all builds finish, every tar.gz would
+    # ship whichever binary was written last.
+    no_unique_dist_dir: false
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    # LICENSE and README travel with every artefact: this is GPL-3.0, and
+    # the licence text must accompany the binary.
+    files:
+      - LICENSE
+      - README.md
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - '^build:'
+      - '^style:'
+  groups:
+    - title: Features
+      regexp: '^feat'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^fix'
+      order: 1
+    - title: 'Performance Improvements'
+      regexp: '^perf'
+      order: 2
+    - title: 'Code Refactoring'
+      regexp: '^refactor'
+      order: 3
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: inful
+    name: minimalizer
+  draft: true
+  prerelease: auto
+
+# `brew install` and `apt` are deliberately NOT configured here. The
+# binary is named `minimalizer` and it only runs on Linux, so a formula
+# would have to be Linux-only too. That is a block to add once a tap
+# actually exists; shipping it now would fail the release against a
+# repository that may not.
