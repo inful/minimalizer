@@ -8,4 +8,6 @@
 FROM scratch
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/minimalizer /minimalizer
+# So the image can be run, not only copied from.
+ENTRYPOINT ["/minimalizer"]
 LABEL org.opencontainers.image.source="https://github.com/inful/minimalizer"
