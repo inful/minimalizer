@@ -83,7 +83,7 @@ func collect(binaries []string, withCache bool) ([]lib, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", bin, err)
 		}
-		paths[bin] = searchPaths{needed: info.needed, rpath: info.rpath, runpath: info.runpath}
+		paths[bin] = searchPathsFor(bin, info)
 
 		deps, err := lddDeps(bin, info)
 		if err != nil {
@@ -216,6 +216,32 @@ func rank(l lib) int {
 	}
 }
 
+// searchPathsFor returns the places the loader looks for the libraries of
+// one binary.
+func searchPathsFor(bin string, info elfInfo) searchPaths {
+	abs, err := filepath.Abs(bin)
+	if err != nil {
+		abs = bin
+	}
+	dir := filepath.Dir(abs)
+	return searchPaths{
+		needed:  info.needed,
+		rpath:   expandOrigin(info.rpath, dir),
+		runpath: expandOrigin(info.runpath, dir),
+	}
+}
+
+// expandOrigin replaces $ORIGIN in the search paths of a binary with the
+// folder the binary is in: that is what the loader looks in, not a folder
+// called "$ORIGIN".
+func expandOrigin(dirs []string, dir string) []string {
+	out := make([]string, 0, len(dirs))
+	for _, d := range dirs {
+		out = append(out, strings.ReplaceAll(d, "$ORIGIN", dir))
+	}
+	return out
+}
+
 // needsCache reports whether the loader can only find a library through its
 // cache: it is neither in a default folder nor in a search path that applies
 // to it.
@@ -238,6 +264,12 @@ func needsCache(l lib, paths searchPaths) bool {
 // underAny reports whether a path is inside one of the folders.
 func underAny(path string, dirs []string) bool {
 	for _, dir := range dirs {
+		if dir == "" {
+			// An empty entry in a search path is not a folder. It must
+			// not match every path, or it silences the warning for the
+			// whole binary.
+			continue
+		}
 		if path == dir || strings.HasPrefix(path, dir+"/") {
 			return true
 		}
@@ -341,6 +373,12 @@ func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
 	treeAbs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve %s: %w", dir, err)
+	}
+	// The marker lives next to the folder, so a symlinked folder would put
+	// the marker next to the link: the tool would not recognise its own
+	// tree then.
+	if resolved, err := filepath.EvalSymlinks(treeAbs); err == nil {
+		treeAbs = resolved
 	}
 	if len(libs) == 0 && len(binaries) == 0 {
 		// Nothing to copy, so there is no folder to make.

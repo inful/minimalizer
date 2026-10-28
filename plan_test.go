@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -121,6 +122,42 @@ func TestCheckCommentPath(t *testing.T) {
 	}
 }
 
+func TestPackageLibsResolvesTheFolder(t *testing.T) {
+	// The marker lives next to the folder, so a symlinked folder would put
+	// it next to the link. The tool would not recognise its own tree then.
+	dir := t.TempDir()
+	src := filepath.Join(dir, "libfoo.so")
+	if err := os.WriteFile(src, []byte("elf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	libs := []lib{{kind: kindLib, soname: "libfoo.so", dest: "/lib/libfoo.so", src: src}}
+
+	folder := filepath.Join(dir, "folder")
+	link := filepath.Join(dir, "link")
+	if err := os.Mkdir(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(folder, link); err != nil {
+		t.Fatal(err)
+	}
+
+	abs, err := packageLibs(libs, nil, link)
+	if err != nil {
+		t.Fatalf("packageLibs() error = %v", err)
+	}
+	want, err := filepath.EvalSymlinks(folder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if abs != want {
+		t.Errorf("dir = %q, want %q", abs, want)
+	}
+	// the marker is next to the real folder, so the second run finds it
+	if _, err := packageLibs(libs, nil, folder); err != nil {
+		t.Errorf("packageLibs() error = %v, want none: the tree is the tool's own", err)
+	}
+}
+
 func TestNeedsCache(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -165,6 +202,15 @@ func TestNeedsCache(t *testing.T) {
 			lib:   lib{soname: "libbar.so", dest: "/opt/lib/libbar.so"},
 			paths: searchPaths{needed: []string{"libfoo.so"}, rpath: []string{"/opt/lib"}},
 		},
+		{
+			// An empty entry in a search path is not a folder. It must
+			// not match every path, or the warning is silenced for the
+			// whole binary.
+			name:  "a library outside every folder, with an empty entry in the runpath",
+			lib:   lib{soname: "libfoo.so", dest: "/opt/other/libfoo.so"},
+			paths: searchPaths{needed: []string{"libfoo.so"}, runpath: []string{"", "/opt/lib"}},
+			want:  true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -172,6 +218,23 @@ func TestNeedsCache(t *testing.T) {
 				t.Errorf("needsCache(%q) = %v, want %v", tc.lib.dest, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSearchPathsForExpandsOrigin(t *testing.T) {
+	// $ORIGIN is the folder of the binary: the loader looks there, not in
+	// a folder called "$ORIGIN".
+	paths := searchPathsFor("/app/app", elfInfo{needed: []string{"libfoo.so"}, runpath: []string{"$ORIGIN", "$ORIGIN/lib", "/opt/lib"}})
+	want := []string{"/app", "/app/lib", "/opt/lib"}
+	if !slices.Equal(paths.runpath, want) {
+		t.Errorf("runpath = %v, want %v", paths.runpath, want)
+	}
+
+	// A library next to the binary is found through it, so the image does
+	// not need the loader cache for it.
+	l := lib{kind: kindLib, soname: "libfoo.so", dest: "/app/libfoo.so"}
+	if needsCache(l, paths) {
+		t.Error("needsCache() = true, want false: the runpath covers the library")
 	}
 }
 
