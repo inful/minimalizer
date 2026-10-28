@@ -1,5 +1,9 @@
 # minimalizer
 
+[![CI](https://github.com/inful/minimalizer/actions/workflows/ci.yml/badge.svg)](https://github.com/inful/minimalizer/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/inful/minimalizer.svg)](https://github.com/inful/minimalizer/releases)
+[![Go Report Card](https://goreportcard.com/badge/github.com/inful/minimalizer)](https://goreportcard.com/report/github.com/inful/minimalizer)
+
 Lists the shared libraries a binary depends on and prints `COPY --from`
 statements that bring them into a `FROM scratch` image.
 
