@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -475,6 +476,37 @@ func TestPackageLibsRemovesLeftoverTempFilesInEveryFolder(t *testing.T) {
 	}
 	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
 		t.Errorf("%s survived the run, want it removed", leftover)
+	}
+}
+
+func TestPackageLibsWritesNoSymlink(t *testing.T) {
+	// kaniko does not copy symlinks, so the tree must not hold one: it is
+	// copied with a single statement.
+	dir := t.TempDir()
+	target := filepath.Join(dir, "libc.so.6.1")
+	if err := os.WriteFile(target, []byte("elf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "libc.so.6")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	pkg := filepath.Join(dir, "rootfs")
+	libs := []lib{{kind: kindLib, soname: "libc.so.6", dest: "/lib/libc.so.6", src: link}}
+	if _, err := packageLibs(libs, nil, pkg); err != nil {
+		t.Fatalf("packageLibs() error = %v", err)
+	}
+	err := filepath.WalkDir(pkg, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			t.Errorf("%s is a symlink, want a regular file", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
