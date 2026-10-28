@@ -94,6 +94,21 @@ snapshot:
 changelog:
   use: git
   sort: asc
+  # A short description of the tool, so the release page says what it is
+  # and not only what changed.
+  header: |
+    `minimalizer` lists the shared libraries a Linux binary needs and prints
+    the `COPY --from` statements that bring them into a `FROM scratch` image.
+    The statements are safe for kaniko: every library is resolved to the real
+    file behind its symlinks and copied to the path the dynamic loader
+    expects, so the image needs no symlinks at all.
+
+    The archives hold the binary for linux on amd64, arm64 and armv7, and the
+    same binary is published as the multi-arch image
+    `ghcr.io/inful/minimalizer:{{ .Tag }}`.
+
+    The tool has to run inside the build stage that holds the binaries, and
+    it only runs on Linux. See the README for the details.
   filters:
     exclude:
       - '^docs:'
