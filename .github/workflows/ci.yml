@@ -31,13 +31,17 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          # No cache: the cache key is built from go.sum, and this project
+          # has no dependencies, so it could never be restored anyway.
 
       - name: Run go mod tidy
         run: |
           go mod tidy
-          if ! git diff --exit-code -- go.mod go.sum; then
+          # git status, not git diff: a new go.sum is not in the index yet,
+          # and git diff does not look at files that are not tracked.
+          if [ -n "$(git status --porcelain -- go.mod go.sum)" ]; then
             echo "go.mod or go.sum is out of date; run 'go mod tidy' locally and commit."
+            git status --porcelain -- go.mod go.sum
             exit 1
           fi
 
@@ -89,7 +93,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
 
       - name: Build ${{ matrix.os }}/${{ matrix.arch }}
         env:
@@ -115,7 +118,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -141,12 +143,14 @@ jobs:
           mkdir -p /tmp/e2e
           go build -trimpath -o /tmp/e2e/minimalizer .
           cd /tmp/e2e
-          ./minimalizer --package=/tmp/e2e/rootfs /bin/ls | grep '^COPY' > copy.txt
+          # The default tree, the one the README shows. The runner user
+          # cannot write to /, so the statement is made as root.
+          sudo ./minimalizer --package=/rootfs /bin/ls | grep '^COPY' > copy.txt
           cat copy.txt
           {
             echo "FROM debian:bookworm-slim AS builder"
             echo "COPY minimalizer /usr/local/bin/minimalizer"
-            echo "RUN minimalizer --package=/tmp/e2e/rootfs /bin/ls"
+            echo "RUN minimalizer --package=/rootfs /bin/ls"
             echo "FROM scratch"
             cat copy.txt
             echo 'ENTRYPOINT ["/bin/ls"]'
