@@ -102,7 +102,8 @@ minimalizer [flags] <binary> [binary...]
 ```
 
 Several binaries can be given at once; the libraries are merged and
-deduplicated. A statically linked binary produces no statements.
+deduplicated. A statically linked binary produces no statements - unless
+`--package` is used, which copies the binary itself into the tree.
 
 `--json` returns the same information in machine readable form:
 
@@ -151,8 +152,8 @@ COPY --from=builder /rootfs/ /
 
 Everything in that tree is a regular file (permissions are kept, so the
 interpreter stays executable) and there is not a single symlink in it, which
-is what kaniko needs. `COPY` of a directory copies its *contents*, so the
-trailing slash on the source puts the files at the root of the image.
+is what kaniko needs. `COPY` of a folder copies its *contents*, so the files
+of the tree land at the root of the image.
 
 One statement moves the whole tree, so the same Dockerfile builds every
 platform: the top folders of the tree differ per platform (`lib64` on amd64,
@@ -180,7 +181,8 @@ minimalizer: refusing to write into /usr: it is not empty and minimalizer did no
 
 The `<folder>.minimalizer` file lives next to the folder, so it never reaches
 the image, and only a file with exactly the content the tool writes gives it
-permission to replace the folder.
+permission to replace the folder. A file of your own with that name is never
+overwritten: the tool refuses the run instead.
 
 That makes the whole thing run inside `docker build`:
 
@@ -259,6 +261,9 @@ because the kernel loads it by absolute path.
 - A path that cannot be written in a Dockerfile line - one with a space, a
   quote or a newline in it - is refused, because the tool prints the paths
   into `COPY` statements and comments.
+- The stage name has to be a name Docker accepts for a stage (letters,
+  digits, `_`, `.` and `-`). A name with a colon would be read by Docker as
+  the name of an image, so it is refused.
 - The analysed binary's dynamic loader is executed, as with `ldd`. Only run
   minimalizer on binaries you trust.
 - `--package` copies the binaries into the tree at the path they have in the
