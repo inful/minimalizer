@@ -47,6 +47,13 @@ jobs:
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           set -euo pipefail
+          # A prerelease is not the newest version for the people who pull
+          # the latest tag, so it leaves the tags where they are. The job
+          # skips itself for a prerelease that is published, but this
+          # workflow can also be started by hand.
+          case "$TAG" in
+            *-*) echo "not a stable tag: $TAG"; exit 1 ;;
+          esac
           version="${TAG#v}"
           series="v${version%.*}"
           docker buildx imagetools create \
