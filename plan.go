@@ -388,6 +388,9 @@ func prepareDir(dir string) ([]string, error) {
 
 // scanTree walks dir once. It returns the temporary files of a run that was
 // killed and whether the folder holds nothing else.
+//
+// The walk goes through the whole tree: a leftover can sit in any folder,
+// and the walk has to see all of them to delete all of them.
 func scanTree(dir string) (leftovers []string, onlyLeftovers bool, err error) {
 	onlyLeftovers = true
 	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -405,7 +408,7 @@ func scanTree(dir string) (leftovers []string, onlyLeftovers bool, err error) {
 			return nil
 		}
 		onlyLeftovers = false
-		return fs.SkipAll
+		return nil
 	})
 	if err != nil {
 		return nil, false, err

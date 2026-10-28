@@ -410,6 +410,41 @@ func TestPackageLibsRefusesAForeignMarkerFile(t *testing.T) {
 	}
 }
 
+func TestPackageLibsRemovesLeftoverTempFilesInEveryFolder(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "app")
+	if err := os.WriteFile(bin, []byte("elf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pkg := filepath.Join(dir, "rootfs")
+	// the first run makes the folder ours
+	if _, err := packageLibs(nil, []string{bin}, pkg); err != nil {
+		t.Fatalf("packageLibs() error = %v", err)
+	}
+	// a normal file in bin/, which the walk meets before lib/
+	if err := os.MkdirAll(filepath.Join(pkg, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "bin", "app"), []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// a run that was killed while copying left a temporary file behind
+	if err := os.MkdirAll(filepath.Join(pkg, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	leftover := filepath.Join(pkg, "lib", tempPrefix+"123456")
+	if err := os.WriteFile(leftover, []byte("half"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := packageLibs(nil, []string{bin}, pkg); err != nil {
+		t.Fatalf("packageLibs() error = %v", err)
+	}
+	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
+		t.Errorf("%s survived the run, want it removed", leftover)
+	}
+}
+
 func TestCopyFileOntoItself(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "libc.so.6")
