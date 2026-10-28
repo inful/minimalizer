@@ -95,8 +95,9 @@ COPY --from=ghcr.io/inful/minimalizer:latest /minimalizer /usr/local/bin/minimal
 
 Every release publishes that image, for amd64, arm64 and armv7 in one
 multi-arch tag, so the same line works on every machine. The image carries the
-tag of the version (`0.1.1`), the tag of the series (`v0.1`) and `latest`,
-which moves when a release is published.
+tag of the version, the tag of the series (`v0.1`) and `latest`. The last two
+move when a release is published, so no tag points at a version that has no
+release page yet.
 
 The binary is statically linked, so it runs in any stage, whatever libc that
 stage has. The stage it runs *in* still needs the ELF interpreter of the
@@ -280,8 +281,10 @@ because the kernel loads it by absolute path.
   library of a library can need the cache even though the binary has a
   runpath that covers its folder.
 - A path that cannot be written in a Dockerfile line - one with a space, a
-  quote or a newline in it - is refused, because the tool prints the paths
-  into `COPY` statements and comments.
+  quote, a newline or a `[` in it - is refused in the modes that print a
+  `COPY` line per library, because Docker would read the line differently.
+  The `--package` mode copies the whole tree with a single statement, so a
+  path with a space is fine there.
 - The stage name has to be a name Docker accepts for a stage (letters,
   digits, `_`, `.` and `-`). A name with a colon would be read by Docker as
   the name of an image, so it is refused.
