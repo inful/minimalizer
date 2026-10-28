@@ -57,7 +57,9 @@ func buildHelper(t *testing.T) string {
 	// path into it.
 	cmd := exec.Command("go", "build", "-buildmode=pie", "-ldflags", "-r /opt/lib", "-o", bin, src)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Skipf("cannot build a helper binary here: %v\n%s", err, out)
+		// Not a skip: a guard that steps aside without a word is worse
+		// than no guard at all.
+		t.Fatalf("cannot build a helper binary: %v\n%s", err, out)
 	}
 	return bin
 }
