@@ -76,10 +76,10 @@ jobs:
         run: go build -trimpath -ldflags="-s -w" -o dist/minimalizer .
 
   build-matrix:
-    # Compile on every supported platform so platform-specific breakage
-    # surfaces before a release, not during. The tool only RUNS on Linux
-    # (it asks a binary's ELF interpreter for its libraries), so the
-    # release ships Linux binaries only.
+    # Compile on every supported platform, so a break that only happens on
+    # one of them shows up before the tag and not during a release. The tool
+    # only RUNS on Linux (it asks a binary's ELF interpreter for its
+    # libraries), so the release ships Linux binaries only.
     name: Build ${{ matrix.os }} / ${{ matrix.arch }}
     runs-on: ubuntu-latest
     strategy:
