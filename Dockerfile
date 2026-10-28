@@ -7,10 +7,7 @@
 # whatever its libc is.
 FROM golang:1.26-alpine AS build
 WORKDIR /src
-COPY go.mod ./
-# Every source file is copied, so a new file cannot break the image build.
-# The test files come along; go build ignores them.
-COPY *.go ./
+COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /minimalizer .
 
 FROM scratch

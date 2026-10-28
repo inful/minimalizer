@@ -1,0 +1,5 @@
+# The build context of the image that carries the tool. Only the sources
+# are needed, and the git folder is 2 MB of history nobody builds with.
+.git
+dist
+/minimalizer
