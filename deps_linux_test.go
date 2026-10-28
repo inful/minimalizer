@@ -9,7 +9,9 @@ import (
 )
 
 func TestLddDeps(t *testing.T) {
-	// The test binary is a Go program, so it is static and has no libraries.
+	// The test binary is a Go program. It is static without cgo and
+	// dynamic with it (the race detector needs cgo), so both cases are
+	// possible here.
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -22,8 +24,23 @@ func TestLddDeps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lddDeps() error = %v", err)
 	}
-	if len(deps) != 0 {
-		t.Errorf("lddDeps() = %v, want no libraries for a static binary", deps)
+	if len(info.needed) == 0 {
+		// A static binary needs nothing, and the loader is not started.
+		if len(deps) != 0 {
+			t.Errorf("lddDeps() = %v, want no libraries for a static binary", deps)
+		}
+		return
+	}
+	// A dynamic binary needs at least the interpreter, which the kernel
+	// loads by absolute path.
+	found := false
+	for _, d := range deps {
+		if d.path == info.interp {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("lddDeps() = %v, want the interpreter %q among them", deps, info.interp)
 	}
 }
 

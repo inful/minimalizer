@@ -20,10 +20,13 @@ func TestReadELF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readELF(%s) error = %v", exe, err)
 	}
-	// The test binary is a Go program: it is either static or a static
-	// position independent binary, so it asks for no libraries at all.
-	if len(info.needed) != 0 {
-		t.Errorf("the test binary asks for %v, want nothing", info.needed)
+	// A binary that asks for libraries has an interpreter to load them,
+	// and a binary without an interpreter asks for nothing.
+	if len(info.needed) > 0 && info.interp == "" {
+		t.Errorf("the test binary asks for %v but has no interpreter", info.needed)
+	}
+	if len(info.needed) == 0 && info.interp != "" {
+		t.Errorf("the test binary has the interpreter %q but asks for nothing", info.interp)
 	}
 }
 
