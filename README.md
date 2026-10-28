@@ -116,13 +116,15 @@ deduplicated. A statically linked binary produces no statements.
 ## Using it inside the build
 
 `--package` writes the needed files into a directory, laid out exactly as they
-have to be in the final image, and prints the statements that move them there:
+have to be in the final image, and prints the statement that moves them there.
+The binary itself goes into the tree as well, under its own name:
 
 ```
 $ minimalizer --package /out/rootfs /out/app
 # (ELF interpreter) /lib64/ld-linux-x86-64.so.2 <- /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 # libc.so.6 /lib/x86_64-linux-gnu/libc.so.6 <- /usr/lib/x86_64-linux-gnu/libc.so.6
 # libpcre2-8.so.0 /lib/x86_64-linux-gnu/libpcre2-8.so.0 <- /usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.11.2
+# binary /app <- /out/app
 COPY --from=builder /out/rootfs/ /
 ```
 
@@ -141,10 +143,17 @@ One statement moves the whole tree, so the same Dockerfile builds every
 platform: the top folders of the tree differ per platform (`lib64` on amd64,
 `lib` on arm64), and a statement per folder would break on the other one.
 
-The folder is emptied on every run, so files from an earlier run never end up
-in the image. To be sure it never touches something you care about, the tool
-only replaces a folder that it made itself - it leaves a `.minimalizer` file
-*next* to it - or a folder that is empty. Any other folder is refused:
+The tree is added to, not replaced, so the tool can be run more than once to
+package several binaries into the same folder:
+
+```
+RUN minimalizer --package /out/rootfs /out/app
+RUN minimalizer --package /out/rootfs /out/worker
+```
+
+To be sure it never touches something you care about, the tool only writes
+into a folder that it made itself - it leaves a `.minimalizer` file *next* to
+it - or a folder that is empty. Any other folder is refused:
 
 ```
 minimalizer: refusing to write into /usr: it is not empty and minimalizer did not make it
@@ -164,8 +173,8 @@ COPY minimalizer /usr/local/bin/minimalizer
 RUN go build -o /out/app ./cmd/app && minimalizer --package /out/rootfs /out/app
 
 FROM scratch
-COPY --from=builder /out/app /app
 COPY --from=builder /out/rootfs/ /
+ENTRYPOINT ["/app"]
 ```
 
 The trailing `RUN` prints the statements to the build log; copy them into the
@@ -176,8 +185,8 @@ RUN { echo "FROM scratch"; echo "COPY --from=builder /out/app /app"; \
       minimalizer --package /out/rootfs /out/app | grep '^COPY'; } > /out/Dockerfile
 ```
 
-The binary itself is not part of the output: where it ends up in the final
-image is up to you.
+Without `--package` the binary is not part of the output: where it ends up in
+the final image is up to you.
 
 ### Without --package
 
@@ -229,5 +238,7 @@ because the kernel loads it by absolute path.
   that covers it.
 - The analysed binary's dynamic loader is executed, as with `ldd`. Only run
   minimalizer on binaries you trust.
-- The tool does not copy the binary itself, `/etc/resolv.conf`, CA
-  certificates or anything else a program may need at runtime.
+- `--package` copies the binaries into the tree under their own name; without
+  it the tool does not copy the binary itself. Neither mode copies
+  `/etc/resolv.conf`, CA certificates or anything else a program may need at
+  runtime.

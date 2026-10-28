@@ -67,9 +67,9 @@ func main() {
 	switch {
 	case *pkgDir != "":
 		var dir string
-		dir, err = packageLibs(libs, *pkgDir)
+		dir, err = packageLibs(libs, flag.Args(), *pkgDir)
 		if err == nil {
-			err = writePackage(os.Stdout, libs, dir, *stage)
+			err = writePackage(os.Stdout, libs, flag.Args(), dir, *stage)
 		}
 	case *asJSON:
 		err = writeJSON(os.Stdout, flag.Args(), libs, *stage)

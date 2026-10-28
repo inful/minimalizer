@@ -242,18 +242,19 @@ func writeDockerfile(w io.Writer, libs []lib, stage string) error {
 	return nil
 }
 
-// packageLibs copies the libraries into dir, laid out at the paths they must
-// have in the final image. The whole tree can then be moved into the scratch
-// image with a single COPY --from, and it contains no symlinks.
+// packageLibs copies the libraries and the binaries into dir, laid out as
+// they have to be in the final image. The whole tree can then be moved into
+// the scratch image with a single COPY --from, and it contains no symlinks.
 //
-// The folder is emptied on every run, so files from an earlier run do not end
-// up in the image. A folder that minimalizer did not make is never touched.
-func packageLibs(libs []lib, dir string) (string, error) {
+// The tree is added to, not replaced, so several binaries can be packaged
+// into the same folder by running the tool more than once. A folder that
+// minimalizer did not make is never touched.
+func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve %s: %w", dir, err)
 	}
-	if len(libs) == 0 {
+	if len(libs) == 0 && len(binaries) == 0 {
 		// Nothing to copy, so there is no folder to make.
 		return abs, nil
 	}
@@ -264,7 +265,7 @@ func packageLibs(libs []lib, dir string) (string, error) {
 		return "", fmt.Errorf("creating %s: %w", abs, err)
 	}
 	// Mark the folder before filling it, so a run that fails in the middle
-	// can still be replaced by the next one.
+	// can still be added to by the next one.
 	if err := os.WriteFile(abs+markerName, []byte(markerContent), 0o644); err != nil {
 		return "", fmt.Errorf("writing the marker: %w", err)
 	}
@@ -277,14 +278,23 @@ func packageLibs(libs []lib, dir string) (string, error) {
 			return "", fmt.Errorf("copying %s: %w", l.src, err)
 		}
 	}
+	for _, bin := range binaries {
+		dst := filepath.Join(abs, filepath.Base(bin))
+		if fi, err := os.Stat(dst); err == nil && fi.IsDir() {
+			return "", fmt.Errorf("%s is a folder in %s, cannot put the binary there", dst, abs)
+		}
+		if err := copyFile(bin, dst); err != nil {
+			return "", fmt.Errorf("copying %s: %w", bin, err)
+		}
+	}
 	return abs, nil
 }
 
-// prepareDir makes sure dir is an empty folder that belongs to minimalizer.
+// prepareDir makes sure dir is a folder that belongs to minimalizer.
 func prepareDir(dir string) error {
 	if data, err := os.ReadFile(dir + markerName); err == nil && string(data) == markerContent {
-		// we made this folder before, so we may replace it
-		return os.RemoveAll(dir)
+		// we made this folder before, so we may add to it
+		return nil
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -302,14 +312,19 @@ func prepareDir(dir string) error {
 // writePackage prints the statement that moves the packaged files into the
 // final image. One statement for the whole tree, so the same Dockerfile
 // builds every platform: the top folders of the tree differ per platform.
-func writePackage(w io.Writer, libs []lib, dir, stage string) error {
-	if len(libs) == 0 {
+func writePackage(w io.Writer, libs []lib, binaries []string, dir, stage string) error {
+	if len(libs) == 0 && len(binaries) == 0 {
 		// Nothing to copy: the binary is static, and there is no folder
 		// to point at.
 		return nil
 	}
 	if err := writeComments(w, libs); err != nil {
 		return err
+	}
+	for _, bin := range binaries {
+		if _, err := fmt.Fprintf(w, "# binary /%s <- %s\n", filepath.Base(bin), bin); err != nil {
+			return err
+		}
 	}
 	_, err := fmt.Fprintf(w, "COPY --from=%s %s/ /\n", stage, dir)
 	return err

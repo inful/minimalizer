@@ -145,7 +145,7 @@ func TestPackageLibs(t *testing.T) {
 	}}
 
 	pkg := filepath.Join(dir, "rootfs")
-	abs, err := packageLibs(libs, pkg)
+	abs, err := packageLibs(libs, nil, pkg)
 	if err != nil {
 		t.Fatalf("packageLibs() error = %v", err)
 	}
@@ -169,16 +169,17 @@ func TestPackageLibs(t *testing.T) {
 		t.Errorf("mode = %v, want -rwxr-xr-x", fi.Mode().Perm())
 	}
 
-	// a file from an earlier run does not survive.
+	// a file from an earlier run stays: the tree is added to, so several
+	// binaries can be packaged into it.
 	stale := filepath.Join(pkg, "lib", "stale.so")
 	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := packageLibs(libs, pkg); err != nil {
+	if _, err := packageLibs(libs, nil, pkg); err != nil {
 		t.Fatalf("packageLibs() error = %v", err)
 	}
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Errorf("%s survived the second run", stale)
+	if _, err := os.Stat(stale); err != nil {
+		t.Errorf("%s did not survive the second run", stale)
 	}
 
 	// a folder minimalizer did not make is never touched.
@@ -190,7 +191,7 @@ func TestPackageLibs(t *testing.T) {
 	if err := os.WriteFile(keep, []byte("keep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := packageLibs(libs, foreign); err == nil {
+	if _, err := packageLibs(libs, nil, foreign); err == nil {
 		t.Errorf("packageLibs() wrote into a folder it did not make")
 	}
 	if _, err := os.Stat(keep); err != nil {
@@ -202,11 +203,68 @@ func TestPackageLibs(t *testing.T) {
 	if err := os.MkdirAll(empty, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := packageLibs(libs, empty); err != nil {
+	if _, err := packageLibs(libs, nil, empty); err != nil {
 		t.Errorf("packageLibs() refused an empty folder: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(empty, "lib/x86_64-linux-gnu/libc.so.6")); err != nil {
 		t.Errorf("the library was not copied into the empty folder: %v", err)
+	}
+}
+
+func TestPackageLibsPutsTheBinaryInTheTree(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "app")
+	if err := os.WriteFile(bin, []byte("elf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pkg := filepath.Join(dir, "rootfs")
+	if _, err := packageLibs(nil, []string{bin}, pkg); err != nil {
+		t.Fatalf("packageLibs() error = %v", err)
+	}
+	dst := filepath.Join(pkg, "app")
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dst, err)
+	}
+	if string(got) != "elf" {
+		t.Errorf("content = %q, want %q", got, "elf")
+	}
+	fi, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o755 {
+		t.Errorf("mode = %v, want -rwxr-xr-x", fi.Mode().Perm())
+	}
+}
+
+func TestPackageLibsAddsToTheTree(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "app")
+	if err := os.WriteFile(first, []byte("one"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(dir, "worker")
+	if err := os.WriteFile(second, []byte("two"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pkg := filepath.Join(dir, "rootfs")
+
+	// two runs, two binaries, one tree
+	if _, err := packageLibs(nil, []string{first}, pkg); err != nil {
+		t.Fatalf("packageLibs() error = %v", err)
+	}
+	if _, err := packageLibs(nil, []string{second}, pkg); err != nil {
+		t.Fatalf("packageLibs() error = %v", err)
+	}
+	for name, want := range map[string]string{"app": "one", "worker": "two"} {
+		got, err := os.ReadFile(filepath.Join(pkg, name))
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		if string(got) != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
 	}
 }
 
@@ -215,7 +273,7 @@ func TestPackageLibsMakesNoFolderForAStaticBinary(t *testing.T) {
 	// folder, and no COPY statement either.
 	dir := t.TempDir()
 	pkg := filepath.Join(dir, "rootfs")
-	abs, err := packageLibs(nil, pkg)
+	abs, err := packageLibs(nil, nil, pkg)
 	if err != nil {
 		t.Fatalf("packageLibs() error = %v", err)
 	}
@@ -227,7 +285,7 @@ func TestPackageLibsMakesNoFolderForAStaticBinary(t *testing.T) {
 	}
 
 	var sb strings.Builder
-	if err := writePackage(&sb, nil, pkg, "builder"); err != nil {
+	if err := writePackage(&sb, nil, nil, pkg, "builder"); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(sb.String(), "COPY") {
@@ -285,7 +343,7 @@ func TestWritePackage(t *testing.T) {
 		{kind: kindInterp, dest: "/lib64/ld-linux-x86-64.so.2", src: "/usr/lib/ld-linux-x86-64.so.2"},
 	}
 	var sb strings.Builder
-	if err := writePackage(&sb, libs, "/out/rootfs", "builder"); err != nil {
+	if err := writePackage(&sb, libs, nil, "/out/rootfs", "builder"); err != nil {
 		t.Fatal(err)
 	}
 	want := "COPY --from=builder /out/rootfs/ /\n"
