@@ -132,7 +132,7 @@ release:
 
     The archives hold the binary for linux on amd64, arm64 and armv7, and the
     same binary is published as the multi-arch image
-    `ghcr.io/inful/minimalizer:{{ .Tag }}`.
+    `ghcr.io/inful/minimalizer:{{ .Version }}`.
 
     The tool has to run inside the build stage that holds the binaries, and
     it only runs on Linux. See the README for the details.
