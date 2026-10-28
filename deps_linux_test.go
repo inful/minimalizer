@@ -75,7 +75,7 @@ func TestLddDepsWithARelativePath(t *testing.T) {
 	if err := os.Chdir(filepath.Dir(binary)); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chdir(dir)
+	defer func() { _ = os.Chdir(dir) }()
 
 	info, err := readELF(name)
 	if err != nil {
