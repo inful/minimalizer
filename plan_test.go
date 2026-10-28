@@ -221,7 +221,12 @@ func TestPackageLibsPutsTheBinaryInTheTree(t *testing.T) {
 	if _, err := packageLibs(nil, []string{bin}, pkg); err != nil {
 		t.Fatalf("packageLibs() error = %v", err)
 	}
-	dst := filepath.Join(pkg, "app")
+	// the binary keeps the path it has in the builder
+	abs, err := filepath.Abs(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(pkg, abs)
 	got, err := os.ReadFile(dst)
 	if err != nil {
 		t.Fatalf("reading %s: %v", dst, err)
@@ -257,13 +262,17 @@ func TestPackageLibsAddsToTheTree(t *testing.T) {
 	if _, err := packageLibs(nil, []string{second}, pkg); err != nil {
 		t.Fatalf("packageLibs() error = %v", err)
 	}
-	for name, want := range map[string]string{"app": "one", "worker": "two"} {
-		got, err := os.ReadFile(filepath.Join(pkg, name))
+	for _, want := range []struct{ path, content string }{{first, "one"}, {second, "two"}} {
+		abs, err := filepath.Abs(want.path)
 		if err != nil {
-			t.Fatalf("reading %s: %v", name, err)
+			t.Fatal(err)
 		}
-		if string(got) != want {
-			t.Errorf("%s = %q, want %q", name, got, want)
+		got, err := os.ReadFile(filepath.Join(pkg, abs))
+		if err != nil {
+			t.Fatalf("reading %s: %v", want.path, err)
+		}
+		if string(got) != want.content {
+			t.Errorf("%s = %q, want %q", want.path, got, want.content)
 		}
 	}
 }

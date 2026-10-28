@@ -62,11 +62,11 @@ FROM minimalizer-tool AS tool
 
 FROM golang:1.26-bookworm AS builder
 COPY --from=tool /minimalizer /usr/local/bin/minimalizer
-RUN go build -o /out/app ./cmd/app && minimalizer --package /out/rootfs /out/app
+RUN go build -o /app ./cmd/app && minimalizer --package /app
 
 FROM scratch
-COPY --from=builder /out/app /app
-COPY --from=builder /out/rootfs/ /
+COPY --from=builder /rootfs/ /
+ENTRYPOINT ["/app"]
 ```
 
 Once the image is pushed, the same works from a registry:
@@ -87,8 +87,8 @@ minimalizer [flags] <binary> [binary...]
   --stage string    name of the source stage used in COPY --from (default "builder")
   --ld-cache        also copy /etc/ld.so.cache
   --json            print JSON instead of Dockerfile statements
-  --package dir     copy the needed files into dir, laid out as the image root,
-                    and print the statements that move them there
+  --package         copy the binaries and their libraries into /rootfs, laid out
+                    as the image root (write --package=DIR for another folder)
 ```
 
 Several binaries can be given at once; the libraries are merged and
@@ -117,21 +117,26 @@ deduplicated. A statically linked binary produces no statements.
 
 `--package` writes the needed files into a directory, laid out exactly as they
 have to be in the final image, and prints the statement that moves them there.
-The binary itself goes into the tree as well, under its own name:
+Everything keeps the path it has in the builder - the libraries because that
+is where the loader looks for them, the binary for the same reason: two
+binaries with the same name in different folders do not overwrite each
+other. The path of the binary in the image is therefore the path where it was
+built.
 
 ```
-$ minimalizer --package /out/rootfs /out/app
+$ minimalizer --package /app
 # (ELF interpreter) /lib64/ld-linux-x86-64.so.2 <- /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 # libc.so.6 /lib/x86_64-linux-gnu/libc.so.6 <- /usr/lib/x86_64-linux-gnu/libc.so.6
 # libpcre2-8.so.0 /lib/x86_64-linux-gnu/libpcre2-8.so.0 <- /usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.11.2
-# binary /app <- /out/app
-COPY --from=builder /out/rootfs/ /
+# binary /app
+COPY --from=builder /rootfs/ /
 ```
 
 ```
-/out/rootfs/lib64/ld-linux-x86-64.so.2
-/out/rootfs/lib/x86_64-linux-gnu/libc.so.6
-/out/rootfs/lib/x86_64-linux-gnu/libpcre2-8.so.0
+/rootfs/app
+/rootfs/lib64/ld-linux-x86-64.so.2
+/rootfs/lib/x86_64-linux-gnu/libc.so.6
+/rootfs/lib/x86_64-linux-gnu/libpcre2-8.so.0
 ```
 
 Everything in that tree is a regular file (permissions are kept, so the
@@ -147,8 +152,8 @@ The tree is added to, not replaced, so the tool can be run more than once to
 package several binaries into the same folder:
 
 ```
-RUN minimalizer --package /out/rootfs /out/app
-RUN minimalizer --package /out/rootfs /out/worker
+RUN minimalizer --package /out/app
+RUN minimalizer --package /out/worker
 ```
 
 To be sure it never touches something you care about, the tool only writes
@@ -170,10 +175,10 @@ FROM golang:1.26-bookworm AS builder
 WORKDIR /src
 COPY . .
 COPY minimalizer /usr/local/bin/minimalizer
-RUN go build -o /out/app ./cmd/app && minimalizer --package /out/rootfs /out/app
+RUN go build -o /app ./cmd/app && minimalizer --package /app
 
 FROM scratch
-COPY --from=builder /out/rootfs/ /
+COPY --from=builder /rootfs/ /
 ENTRYPOINT ["/app"]
 ```
 
@@ -181,8 +186,8 @@ The trailing `RUN` prints the statements to the build log; copy them into the
 final stage, or generate the whole final stage in one go:
 
 ```dockerfile
-RUN { echo "FROM scratch"; echo "COPY --from=builder /out/app /app"; \
-      minimalizer --package /out/rootfs /out/app | grep '^COPY'; } > /out/Dockerfile
+RUN { echo "FROM scratch"; echo "COPY --from=builder /rootfs/ /"; \
+      minimalizer --package /out/app | grep '^COPY'; } > /out/Dockerfile
 ```
 
 Without `--package` the binary is not part of the output: where it ends up in
@@ -238,7 +243,7 @@ because the kernel loads it by absolute path.
   that covers it.
 - The analysed binary's dynamic loader is executed, as with `ldd`. Only run
   minimalizer on binaries you trust.
-- `--package` copies the binaries into the tree under their own name; without
-  it the tool does not copy the binary itself. Neither mode copies
+- `--package` copies the binaries into the tree at the path they have in the
+  builder; without it the tool does not copy the binary itself. Neither mode copies
   `/etc/resolv.conf`, CA certificates or anything else a program may need at
   runtime.

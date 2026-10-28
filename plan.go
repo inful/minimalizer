@@ -279,11 +279,22 @@ func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
 		}
 	}
 	for _, bin := range binaries {
-		dst := filepath.Join(abs, filepath.Base(bin))
-		if fi, err := os.Stat(dst); err == nil && fi.IsDir() {
-			return "", fmt.Errorf("%s is a folder in %s, cannot put the binary there", dst, abs)
+		// The binary keeps the path it has in the builder, like the
+		// libraries do. Two binaries with the same name therefore land in
+		// different places, and the path in the image is the path where
+		// the binary was built.
+		abs, err := filepath.Abs(bin)
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve %s: %w", bin, err)
 		}
-		if err := copyFile(bin, dst); err != nil {
+		dst := filepath.Join(dir, abs)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return "", fmt.Errorf("creating %s: %w", filepath.Dir(dst), err)
+		}
+		if fi, err := os.Stat(dst); err == nil && fi.IsDir() {
+			return "", fmt.Errorf("%s is a folder in %s, cannot put the binary there", dst, dir)
+		}
+		if err := copyFile(abs, dst); err != nil {
 			return "", fmt.Errorf("copying %s: %w", bin, err)
 		}
 	}
@@ -322,7 +333,11 @@ func writePackage(w io.Writer, libs []lib, binaries []string, dir, stage string)
 		return err
 	}
 	for _, bin := range binaries {
-		if _, err := fmt.Fprintf(w, "# binary /%s <- %s\n", filepath.Base(bin), bin); err != nil {
+		abs, err := filepath.Abs(bin)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "# binary %s\n", abs); err != nil {
 			return err
 		}
 	}
