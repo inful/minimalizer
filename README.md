@@ -47,6 +47,18 @@ which every stage that can *run* that binary has - the `ldd` command itself is
 not needed, the interpreter is asked directly (see
 [How it works](#how-it-works)). It only runs on Linux.
 
+### Working on the tool
+
+The checks that run before every commit are the ones the CI runs:
+`golangci-lint` and `go test -race`. They are set up with
+[lefthook](https://lefthook.dev):
+
+```bash
+brew install lefthook        # or the package of your system
+git clone https://github.com/inful/minimalizer && cd minimalizer
+lefthook install             # installs the git hook
+```
+
 ### As an image
 
 The repository ships a `Dockerfile` that builds the tool into an image of its
