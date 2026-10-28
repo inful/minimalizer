@@ -23,8 +23,20 @@ path the loader resolved it to, and the real file that gets copied.
 
 ## Install
 
+From a release archive (linux, on amd64, arm64 or armv7 — every archive ships
+a `checksums.txt`):
+
+```bash
+tar xzf minimalizer_<version>_<os>_<arch>.tar.gz
+sudo install -m 0755 minimalizer /usr/local/bin/minimalizer
 ```
-go build -o minimalizer .
+
+Or, from source:
+
+```bash
+go install github.com/inful/minimalizer@latest
+# or
+git clone https://github.com/inful/minimalizer && cd minimalizer && go build -o minimalizer .
 ```
 
 The tool must run **in the stage that holds the binaries** (it reads that
