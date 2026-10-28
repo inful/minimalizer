@@ -31,6 +31,8 @@ tar xzf minimalizer_<version>_<os>_<arch>.tar.gz
 sudo install -m 0755 minimalizer /usr/local/bin/minimalizer
 ```
 
+The architecture is in the file name: `amd64`, `arm64` or `armv7`.
+
 Or, from source:
 
 ```bash
@@ -74,6 +76,9 @@ Once the image is pushed, the same works from a registry:
 ```dockerfile
 COPY --from=ghcr.io/inful/minimalizer:latest /minimalizer /usr/local/bin/minimalizer
 ```
+
+Every release publishes that image, for amd64, arm64 and armv7 in one
+multi-arch tag, so the same line works on every machine.
 
 The binary is statically linked, so it runs in any stage, whatever libc that
 stage has. The stage it runs *in* still needs the ELF interpreter of the

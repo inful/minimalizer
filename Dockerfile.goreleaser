@@ -1,0 +1,11 @@
+# The image that the release publishes, built by GoReleaser.
+#
+# GoReleaser puts the binary of each platform in the build context under
+# $TARGETPLATFORM, so one buildx call makes the image for every platform.
+#
+# The binary is statically linked (CGO_ENABLED=0), so it runs in any stage,
+# whatever its libc is.
+FROM scratch
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/minimalizer /minimalizer
+LABEL org.opencontainers.image.source="https://github.com/inful/minimalizer"

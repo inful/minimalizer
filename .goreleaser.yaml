@@ -57,6 +57,34 @@ archives:
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
 
+# The tool is also published as an image, so a build stage can copy the
+# binary out of it instead of building it again:
+#
+#   COPY --from=ghcr.io/inful/minimalizer:latest /minimalizer /usr/local/bin/minimalizer
+#
+# The image holds the same static binary as the archives, for the Linux
+# architectures that matter here. One buildx call builds every platform and
+# pushes a manifest, so `latest` works on every machine.
+dockers_v2:
+  - id: minimalizer
+    dockerfile: Dockerfile.goreleaser
+    ids:
+      - minimalizer
+    images:
+      - "ghcr.io/inful/minimalizer"
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .IsNightly }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+      - linux/arm/v7
+    labels:
+      "org.opencontainers.image.source": "https://github.com/inful/minimalizer"
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.description": "Lists the shared libraries a binary needs and prints COPY --from statements for a scratch image"
+
 checksum:
   name_template: checksums.txt
 
