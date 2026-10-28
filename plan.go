@@ -20,7 +20,11 @@ const (
 )
 
 // badPathChars would break the Dockerfile lines we print.
-const badPathChars = " \t\n#\"'$"
+//
+// The bracket is in there because the source of a COPY is a glob: a path
+// with a "[" in it matches a different file, or none at all, and the build
+// says nothing about it.
+const badPathChars = " \t\n#\"'$["
 
 // badCommentChars would break out of a comment line we print.
 const badCommentChars = "\r\n"

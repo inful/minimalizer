@@ -58,7 +58,7 @@ func TestResolveMarksInterpreter(t *testing.T) {
 }
 
 func TestWriteDockerfileRejectsPathsThatBreakIt(t *testing.T) {
-	for _, path := range []string{"/lib/with space.so", "/lib/with#hash.so", "/lib/with$dollar.so", "/lib/with\"quote.so"} {
+	for _, path := range []string{"/lib/with space.so", "/lib/with#hash.so", "/lib/with$dollar.so", "/lib/with\"quote.so", "/lib/with[bracket.so"} {
 		libs := []lib{{kind: kindLib, soname: "libfoo.so", dest: path, src: path}}
 		var sb strings.Builder
 		if err := writeDockerfile(&sb, libs, "builder"); err == nil {
@@ -101,10 +101,23 @@ func TestWritePackageAcceptsAPathWithASpace(t *testing.T) {
 }
 
 func TestWriteJSONRejectsPathsThatBreakTheCopyLine(t *testing.T) {
-	libs := []lib{{kind: kindLib, soname: "libfoo.so", dest: "/opt/my libs/libfoo.so", src: "/opt/my libs/libfoo.so"}}
-	var sb strings.Builder
-	if err := writeJSON(&sb, []string{"/out/app"}, libs, "builder"); err == nil {
-		t.Error("writeJSON() did not fail on a path with a space")
+	for _, path := range []string{"/opt/my libs/libfoo.so", "/opt/lib[1]/libfoo.so"} {
+		libs := []lib{{kind: kindLib, soname: "libfoo.so", dest: path, src: path}}
+		var sb strings.Builder
+		if err := writeJSON(&sb, []string{"/out/app"}, libs, "builder"); err == nil {
+			t.Errorf("writeJSON() did not fail on %q", path)
+		}
+	}
+}
+
+func TestCheckCommentPath(t *testing.T) {
+	// A newline would break out of the comment the path is written in, a
+	// space would not.
+	if err := checkCommentPath("/opt/lib\nname.so"); err == nil {
+		t.Error("checkCommentPath() did not fail on a path with a newline")
+	}
+	if err := checkCommentPath("/opt/my libs/libfoo.so"); err != nil {
+		t.Errorf("checkCommentPath() error = %v, want none", err)
 	}
 }
 
