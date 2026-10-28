@@ -94,7 +94,9 @@ COPY --from=ghcr.io/inful/minimalizer:latest /minimalizer /usr/local/bin/minimal
 ```
 
 Every release publishes that image, for amd64, arm64 and armv7 in one
-multi-arch tag, so the same line works on every machine.
+multi-arch tag, so the same line works on every machine. The image carries the
+tag of the version (`0.1.1`), the tag of the series (`v0.1`) and `latest`,
+which moves when a release is published.
 
 The binary is statically linked, so it runs in any stage, whatever libc that
 stage has. The stage it runs *in* still needs the ELF interpreter of the

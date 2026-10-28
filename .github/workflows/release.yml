@@ -2,7 +2,9 @@
 # Tag-triggered release. Pushing v* tags runs GoReleaser, which builds the
 # `minimalizer` binary for the Linux platforms, publishes the container image
 # to ghcr.io, and opens a DRAFT GitHub release. Draft so the notes get read
-# before they ship.
+# before they ship: publish it with `gh release edit v0.1.2 --draft=false`
+# when the notes are good. The latest tag of the image moves then too, in
+# the publish-latest workflow.
 #
 # The tag is not pushed on every merge on purpose: a release is a decision,
 # and this repo is pre-1.0.

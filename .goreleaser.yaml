@@ -7,6 +7,8 @@
 # on one of them shows up before the tag.
 #
 # Draft by default so the maintainer can read the notes before publishing.
+# The publish-latest workflow moves the latest tag of the image when the
+# release is published, so the two never disagree.
 # Docs: https://goreleaser.com/customization/
 version: 2
 
@@ -72,9 +74,13 @@ dockers_v2:
       - minimalizer
     images:
       - "ghcr.io/inful/minimalizer"
+    # The version of the release and the series it belongs to. The latest
+    # tag is not here: the release is a draft while it is built, and the
+    # latest tag moves when the release is published, so the release page
+    # and the image never disagree about which version is the newest.
     tags:
       - "{{ .Version }}"
-      - "{{ if not .IsNightly }}latest{{ end }}"
+      - "v{{ .Major }}.{{ .Minor }}"
     platforms:
       - linux/amd64
       - linux/arm64
