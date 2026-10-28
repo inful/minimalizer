@@ -23,8 +23,8 @@ path the loader resolved it to, and the real file that gets copied.
 
 ## Install
 
-From a release archive (linux, on amd64, arm64 or armv7 — every archive ships
-a `checksums.txt`):
+From a release archive (linux, on amd64, arm64 or armv7 - every release has a
+`checksums.txt` next to the archives):
 
 ```bash
 tar xzf minimalizer_<version>_<os>_<arch>.tar.gz
@@ -84,11 +84,16 @@ analysed binary, because that is where the binaries and their libraries live.
 ```
 minimalizer [flags] <binary> [binary...]
 
-  --stage string    name of the source stage used in COPY --from (default "builder")
-  --ld-cache        also copy /etc/ld.so.cache
-  --json            print JSON instead of Dockerfile statements
-  --package         copy the binaries and their libraries into /rootfs, laid out
-                    as the image root (write --package=DIR for another folder)
+  -json
+    	print JSON instead of Dockerfile statements
+  -ld-cache
+    	also copy /etc/ld.so.cache (needed when libraries live outside the loader's default search path)
+  -package
+    	copy the binaries and their libraries into /rootfs, laid out as the image root (write --package=DIR for another folder)
+  -stage string
+    	name of the source stage used in COPY --from (default "builder")
+  -version
+    	print the version and exit
 ```
 
 Several binaries can be given at once; the libraries are merged and
@@ -156,16 +161,20 @@ RUN minimalizer --package /out/app
 RUN minimalizer --package /out/worker
 ```
 
+The tree goes to `/rootfs`, which needs write access to `/`. In a build
+stage that runs as a user other than root, name another folder with
+`--package=DIR`; the folder then shows up in the statement the tool prints.
+
 To be sure it never touches something you care about, the tool only writes
-into a folder that it made itself - it leaves a `.minimalizer` file *next* to
-it - or a folder that is empty. Any other folder is refused:
+into a folder that it made itself - it leaves a `<folder>.minimalizer` file
+*next* to it - or a folder that is empty. Any other folder is refused:
 
 ```
 minimalizer: refusing to write into /usr: it is not empty and minimalizer did not make it
 ```
 
-The `.minimalizer` file lives next to the folder, so it never reaches the
-image, and only a file with exactly the content the tool writes gives it
+The `<folder>.minimalizer` file lives next to the folder, so it never reaches
+the image, and only a file with exactly the content the tool writes gives it
 permission to replace the folder.
 
 That makes the whole thing run inside `docker build`:
@@ -187,7 +196,7 @@ final stage, or generate the whole final stage in one go:
 
 ```dockerfile
 RUN { echo "FROM scratch"; echo "COPY --from=builder /rootfs/ /"; \
-      minimalizer --package /out/app | grep '^COPY'; } > /out/Dockerfile
+      minimalizer --package /app | grep '^COPY'; } > /out/Dockerfile
 ```
 
 Without `--package` the binary is not part of the output: where it ends up in
@@ -218,7 +227,8 @@ COPY --from=builder /usr/lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/li
 3. The destination stays the path the loader resolved the library to, so the
    loader finds it under the name it expects - with the real file's contents,
    which is what kaniko needs.
-4. Everything is deduplicated by destination path.
+4. Everything is deduplicated by destination path: a library that several
+   binaries need is resolved and copied once.
 
 The ELF interpreter (`/lib64/ld-linux-x86-64.so.2` and friends) is included,
 because the kernel loads it by absolute path.
@@ -239,11 +249,14 @@ because the kernel loads it by absolute path.
   path. Libraries outside `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64` and
   `/usr/local/lib` (for example in `/opt`) are only found again if the cache
   is copied too, so use `--ld-cache` in that case. The tool prints a warning
-  when it sees such a library and the binary has no search path of its own
+  for every binary that needs such a library and has no search path of its own
   that covers it.
+- A path that cannot be written in a Dockerfile line - one with a space, a
+  quote or a newline in it - is refused, because the tool prints the paths
+  into `COPY` statements and comments.
 - The analysed binary's dynamic loader is executed, as with `ldd`. Only run
   minimalizer on binaries you trust.
 - `--package` copies the binaries into the tree at the path they have in the
-  builder; without it the tool does not copy the binary itself. Neither mode copies
-  `/etc/resolv.conf`, CA certificates or anything else a program may need at
-  runtime.
+  builder; without it the tool does not copy the binary itself. Neither mode
+  copies `/etc/resolv.conf`, CA certificates or anything else a program may
+  need at runtime.

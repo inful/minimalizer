@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,6 +21,13 @@ const (
 
 // badPathChars would break the Dockerfile lines we print.
 const badPathChars = " \t\n#\"'$"
+
+// badCommentChars would break out of a comment line we print.
+const badCommentChars = "\r\n"
+
+// tempPrefix is the name of the temporary file copyFile writes next to its
+// destination. A run that is killed leaves it behind.
+const tempPrefix = ".minimalizer-tmp-"
 
 // markerName is the file next to the package folder that says the folder
 // belongs to minimalizer, so it may be replaced on the next run.
@@ -53,13 +62,16 @@ var defaultDirs = []string{"/lib", "/usr/lib", "/lib64", "/usr/lib64", "/usr/loc
 // and deterministic list.
 func collect(binaries []string, withCache bool) ([]lib, error) {
 	byDest := map[string]lib{}
-	var searchPaths []string
+	// The search paths of each binary, so a library is judged against the
+	// binary that needs it and not against the ones that happen to be
+	// analysed in the same run.
+	rpaths := map[string][]string{}
 	for _, bin := range binaries {
 		info, err := readELF(bin)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", bin, err)
 		}
-		searchPaths = append(searchPaths, info.rpaths...)
+		rpaths[bin] = info.rpaths
 
 		deps, err := lddDeps(bin, info)
 		if err != nil {
@@ -90,12 +102,26 @@ func collect(binaries []string, withCache bool) ([]lib, error) {
 		return libs[i].dest < libs[j].dest
 	})
 
+	warnNeedsCache(libs, rpaths)
+	return libs, nil
+}
+
+// warnNeedsCache warns about every library that the loader can only find
+// through its cache. The search paths of each binary are looked at on its
+// own: a library that one binary finds through its rpath can still be a
+// problem for another binary that has none.
+func warnNeedsCache(libs []lib, rpaths map[string][]string) {
 	for _, l := range libs {
-		if l.kind == kindLib && needsCache(l.dest, searchPaths) {
-			fmt.Fprintf(os.Stderr, "minimalizer: warning: %s is outside the loader's default search path, the image may need --ld-cache\n", l.dest)
+		if l.kind != kindLib {
+			continue
+		}
+		for _, bin := range l.usedBy {
+			if needsCache(l.dest, rpaths[bin]) {
+				fmt.Fprintf(os.Stderr, "minimalizer: warning: %s is outside the loader's default search path of %s, the image may need --ld-cache\n", l.dest, bin)
+				break
+			}
 		}
 	}
-	return libs, nil
 }
 
 // merge adds the dependencies of one binary to the files that have to be
@@ -103,18 +129,21 @@ func collect(binaries []string, withCache bool) ([]lib, error) {
 // of binaries that need it grows.
 func merge(byDest map[string]lib, deps []dep, bin string) error {
 	for _, d := range deps {
+		if prev, ok := byDest[d.path]; ok {
+			// Already resolved for another binary: only the list of
+			// users grows. Resolving it again would repeat the same
+			// file system work for every binary.
+			if !slices.Contains(prev.usedBy, bin) {
+				prev.usedBy = append(prev.usedBy, bin)
+			}
+			byDest[d.path] = prev
+			continue
+		}
 		l, err := resolve(d)
 		if err != nil {
 			return fmt.Errorf("%s: %w", bin, err)
 		}
-		if prev, ok := byDest[l.dest]; ok {
-			l.usedBy = prev.usedBy
-			if !slices.Contains(l.usedBy, bin) {
-				l.usedBy = append(l.usedBy, bin)
-			}
-		} else {
-			l.usedBy = []string{bin}
-		}
+		l.usedBy = []string{bin}
 		byDest[l.dest] = l
 	}
 	return nil
@@ -130,6 +159,11 @@ func resolve(d dep) (lib, error) {
 	resolved, err := filepath.EvalSymlinks(d.path)
 	if err != nil {
 		return lib{}, fmt.Errorf("cannot resolve %s: %w", d.path, err)
+	}
+	// The real file is what the COPY statement names, so it has to be
+	// printable in a Dockerfile line as well.
+	if strings.ContainsAny(resolved, badPathChars) {
+		return lib{}, fmt.Errorf("unsupported library path %q", resolved)
 	}
 	fi, err := os.Stat(resolved)
 	if err != nil {
@@ -250,27 +284,35 @@ func writeDockerfile(w io.Writer, libs []lib, stage string) error {
 // into the same folder by running the tool more than once. A folder that
 // minimalizer did not make is never touched.
 func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
-	abs, err := filepath.Abs(dir)
+	treeAbs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve %s: %w", dir, err)
 	}
 	if len(libs) == 0 && len(binaries) == 0 {
 		// Nothing to copy, so there is no folder to make.
-		return abs, nil
+		return treeAbs, nil
 	}
-	if err := prepareDir(abs); err != nil {
+	if err := prepareDir(treeAbs); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(abs, 0o755); err != nil {
-		return "", fmt.Errorf("creating %s: %w", abs, err)
+	if err := os.MkdirAll(treeAbs, 0o755); err != nil {
+		if errors.Is(err, os.ErrPermission) && treeAbs == defaultRootfs {
+			return "", fmt.Errorf("creating %s: %w (the default tree needs write access to /; use --package=DIR for another folder)", treeAbs, err)
+		}
+		return "", fmt.Errorf("creating %s: %w", treeAbs, err)
+	}
+	// A run that was killed while copying left temporary files behind.
+	// They would end up in the image, so they go before anything is copied.
+	if err := removeTempFiles(treeAbs); err != nil {
+		return "", err
 	}
 	// Mark the folder before filling it, so a run that fails in the middle
 	// can still be added to by the next one.
-	if err := os.WriteFile(abs+markerName, []byte(markerContent), 0o644); err != nil {
+	if err := os.WriteFile(treeAbs+markerName, []byte(markerContent), 0o644); err != nil {
 		return "", fmt.Errorf("writing the marker: %w", err)
 	}
 	for _, l := range libs {
-		dst := filepath.Join(abs, l.dest)
+		dst := filepath.Join(treeAbs, l.dest)
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return "", fmt.Errorf("creating %s: %w", filepath.Dir(dst), err)
 		}
@@ -283,22 +325,42 @@ func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
 		// libraries do. Two binaries with the same name therefore land in
 		// different places, and the path in the image is the path where
 		// the binary was built.
-		abs, err := filepath.Abs(bin)
+		binAbs, err := filepath.Abs(bin)
 		if err != nil {
 			return "", fmt.Errorf("cannot resolve %s: %w", bin, err)
 		}
-		dst := filepath.Join(dir, abs)
+		dst := filepath.Join(treeAbs, binAbs)
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return "", fmt.Errorf("creating %s: %w", filepath.Dir(dst), err)
 		}
 		if fi, err := os.Stat(dst); err == nil && fi.IsDir() {
-			return "", fmt.Errorf("%s is a folder in %s, cannot put the binary there", dst, dir)
+			return "", fmt.Errorf("%s is a folder in %s, cannot put the binary there", dst, treeAbs)
 		}
-		if err := copyFile(abs, dst); err != nil {
+		if err := copyFile(binAbs, dst); err != nil {
 			return "", fmt.Errorf("copying %s: %w", bin, err)
 		}
 	}
-	return abs, nil
+	return treeAbs, nil
+}
+
+// removeTempFiles deletes the temporary files of a run that was killed while
+// copying. They live inside the tree, so they would end up in the image.
+func removeTempFiles(dir string) error {
+	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() || !strings.HasPrefix(d.Name(), tempPrefix) {
+			return nil
+		}
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("removing %s: %w", path, err)
+		}
+		return nil
+	})
 }
 
 // prepareDir makes sure dir is a folder that belongs to minimalizer.
@@ -314,10 +376,42 @@ func prepareDir(dir string) error {
 		}
 		return fmt.Errorf("reading %s: %w", dir, err)
 	}
-	if len(entries) > 0 {
-		return fmt.Errorf("refusing to write into %s: it is not empty and minimalizer did not make it", dir)
+	if len(entries) == 0 {
+		return nil
 	}
-	return nil
+	// A folder that holds nothing but the temporary files of a run that
+	// was killed is empty as far as the user is concerned.
+	onlyTemp, err := onlyTempFiles(dir)
+	if err != nil {
+		return err
+	}
+	if onlyTemp {
+		return nil
+	}
+	return fmt.Errorf("refusing to write into %s: it is not empty and minimalizer did not make it", dir)
+}
+
+// onlyTempFiles reports whether every file in dir is a temporary file of a
+// killed run.
+func onlyTempFiles(dir string) (bool, error) {
+	only := true
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !strings.HasPrefix(d.Name(), tempPrefix) {
+			only = false
+			return fs.SkipAll
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return only, nil
 }
 
 // writePackage prints the statement that moves the packaged files into the
@@ -336,6 +430,11 @@ func writePackage(w io.Writer, libs []lib, binaries []string, dir, stage string)
 		abs, err := filepath.Abs(bin)
 		if err != nil {
 			return err
+		}
+		// The path is printed in a comment, so it must not be able to
+		// break out of it.
+		if strings.ContainsAny(abs, badCommentChars) {
+			return fmt.Errorf("the binary path %q cannot be used in a Dockerfile comment", abs)
 		}
 		if _, err := fmt.Fprintf(w, "# binary %s\n", abs); err != nil {
 			return err
@@ -358,7 +457,7 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".minimalizer-*")
+	tmp, err := os.CreateTemp(filepath.Dir(dst), tempPrefix+"*")
 	if err != nil {
 		return err
 	}

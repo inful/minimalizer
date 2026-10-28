@@ -35,6 +35,9 @@ builds:
     goarch:
       - amd64
       - arm64
+      - arm
+    # Only armv7 is built. The version is part of the archive name, so a
+    # later armv6 build gets a name of its own.
     goarm:
       - "7"
     # Each build gets its own output directory (dist/minimalizer_<os>_<arch>/).
@@ -52,7 +55,7 @@ archives:
       - LICENSE
       - README.md
     name_template: >-
-      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
 
 checksum:
   name_template: checksums.txt

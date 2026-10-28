@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,6 +64,24 @@ func TestResolveRejectsPathsThatBreakTheDockerfile(t *testing.T) {
 	}
 }
 
+func TestResolveRejectsRealPathsThatBreakTheDockerfile(t *testing.T) {
+	// The real file behind the symlink is what the COPY statement names,
+	// so it has to be printable in a Dockerfile line as well.
+	dir := t.TempDir()
+	target := filepath.Join(dir, "with space.so")
+	if err := os.WriteFile(target, []byte("elf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "libfoo.so.1")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := resolve(dep{soname: "libfoo.so.1", path: link}); err == nil {
+		t.Error("resolve() did not fail on a real path with a space")
+	}
+}
+
 func TestNeedsCache(t *testing.T) {
 	tests := []struct {
 		dest  string
@@ -81,6 +100,43 @@ func TestNeedsCache(t *testing.T) {
 		if got := needsCache(tc.dest, tc.paths); got != tc.want {
 			t.Errorf("needsCache(%q, %v) = %v, want %v", tc.dest, tc.paths, got, tc.want)
 		}
+	}
+}
+
+func TestWarnNeedsCache(t *testing.T) {
+	libs := []lib{{
+		kind:   kindLib,
+		soname: "libfoo.so",
+		dest:   "/opt/lib/libfoo.so",
+		usedBy: []string{"/out/app", "/out/worker"},
+	}}
+	// The first binary finds the library through its rpath, the second one
+	// does not: the second one needs the cache in the image.
+	rpaths := map[string][]string{
+		"/out/app":    {"/opt/lib"},
+		"/out/worker": nil,
+	}
+
+	var sb strings.Builder
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	warnNeedsCache(libs, rpaths)
+	_ = w.Close()
+	os.Stderr = old
+	if _, err := io.Copy(&sb, r); err != nil {
+		t.Fatal(err)
+	}
+
+	out := sb.String()
+	if !strings.Contains(out, "/opt/lib/libfoo.so") {
+		t.Errorf("warning = %q, want it to name the library", out)
+	}
+	if !strings.Contains(out, "/out/worker") {
+		t.Errorf("warning = %q, want it to name the binary that needs the cache", out)
 	}
 }
 
@@ -299,6 +355,30 @@ func TestPackageLibsMakesNoFolderForAStaticBinary(t *testing.T) {
 	}
 	if strings.Contains(sb.String(), "COPY") {
 		t.Errorf("output %q copies something, want nothing", sb.String())
+	}
+}
+
+func TestPackageLibsRemovesLeftoverTempFiles(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "app")
+	if err := os.WriteFile(bin, []byte("elf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pkg := filepath.Join(dir, "rootfs")
+	if err := os.MkdirAll(filepath.Join(pkg, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// a run that was killed while copying leaves a temporary file behind
+	leftover := filepath.Join(pkg, "lib", tempPrefix+"123456")
+	if err := os.WriteFile(leftover, []byte("half"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := packageLibs(nil, []string{bin}, pkg); err != nil {
+		t.Fatalf("packageLibs() error = %v", err)
+	}
+	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
+		t.Errorf("%s survived the run, want it removed", leftover)
 	}
 }
 

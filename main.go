@@ -7,9 +7,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -47,74 +50,170 @@ func (p *packageFlag) Set(v string) error {
 // IsBoolFlag lets --package be used without a value.
 func (p *packageFlag) IsBoolFlag() bool { return true }
 
-func main() {
-	stage := flag.String("stage", "builder", "name of the source stage used in COPY --from")
-	ldCache := flag.Bool("ld-cache", false, "also copy /etc/ld.so.cache (needed when libraries live outside the loader's default search path)")
-	asJSON := flag.Bool("json", false, "print JSON instead of Dockerfile statements")
-	pkg := &packageFlag{}
-	flag.Var(pkg, "package", "copy the binaries and their libraries into "+defaultRootfs+", laid out as the image root (write --package=DIR for another folder)")
-	showVersion := flag.Bool("version", false, "print the version and exit")
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: minimalizer [flags] <binary> [binary...]\n\n")
-		flag.PrintDefaults()
-	}
-	flag.Parse()
+// options is what the command line asks for.
+type options struct {
+	fs          *flag.FlagSet
+	stage       string
+	ldCache     bool
+	asJSON      bool
+	packageDir  string // empty means: do not package
+	binaries    []string
+	showVersion bool
+}
 
-	if *showVersion {
+// parseArgs reads the command line. It always returns the options it could
+// read, so the caller can print the usage next to an error.
+func parseArgs(args []string) (*options, error) {
+	opts := &options{}
+	fs := flag.NewFlagSet("minimalizer", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	opts.fs = fs
+
+	stage := fs.String("stage", "builder", "name of the source stage used in COPY --from")
+	ldCache := fs.Bool("ld-cache", false, "also copy /etc/ld.so.cache (needed when libraries live outside the loader's default search path)")
+	asJSON := fs.Bool("json", false, "print JSON instead of Dockerfile statements")
+	pkg := &packageFlag{}
+	fs.Var(pkg, "package", "copy the binaries and their libraries into "+defaultRootfs+", laid out as the image root (write --package=DIR for another folder)")
+	showVersion := fs.Bool("version", false, "print the version and exit")
+
+	if err := fs.Parse(args); err != nil {
+		return opts, err
+	}
+	opts.stage = *stage
+	opts.ldCache = *ldCache
+	opts.asJSON = *asJSON
+	opts.showVersion = *showVersion
+	opts.binaries = fs.Args()
+	if pkg.set {
+		opts.packageDir = pkg.dir
+		if opts.packageDir == "" {
+			opts.packageDir = defaultRootfs
+		}
+	}
+	return opts, nil
+}
+
+// validate refuses the combinations the tool cannot act on. Every refusal
+// is a usage error.
+func validate(opts *options) error {
+	if opts.asJSON && opts.packageDir != "" {
+		return errors.New("--json and --package cannot be combined")
+	}
+	if opts.stage == "" {
+		return errors.New("the stage name cannot be empty")
+	}
+	if strings.Contains(opts.stage, "/") {
+		return errors.New("the stage name cannot contain a slash")
+	}
+	if err := checkWord("stage name", opts.stage); err != nil {
+		return err
+	}
+	if opts.packageDir != "" {
+		// The folder goes into a COPY statement, so it must not be able
+		// to break that line.
+		abs, err := filepath.Abs(opts.packageDir)
+		if err != nil {
+			return fmt.Errorf("cannot resolve %s: %w", opts.packageDir, err)
+		}
+		if err := checkWord("package folder", abs); err != nil {
+			return err
+		}
+		opts.packageDir = abs
+		if err := checkPackageForm(opts.packageDir, opts.binaries); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkPackageForm catches the old "--package FOLDER BINARY" form. The flag
+// takes no value now, so the folder ends up where the first binary should
+// be. The folder usually does not exist yet, because the tool is the one
+// that creates it, so it is recognised by the first argument not being a
+// binary while a later one is.
+func checkPackageForm(dir string, binaries []string) error {
+	if len(binaries) < 2 {
+		return nil
+	}
+	first := binaries[0]
+	if fi, err := os.Stat(first); err == nil && fi.IsDir() {
+		return fmt.Errorf("%s is a folder. The tree goes to %s; write --package=DIR to name another folder", first, dir)
+	}
+	if isELF(first) {
+		return nil
+	}
+	for _, b := range binaries[1:] {
+		if isELF(b) {
+			return fmt.Errorf("%s is not a binary. The tree goes to %s; write --package=DIR to name another folder", first, dir)
+		}
+	}
+	return nil
+}
+
+// isELF reports whether the file starts with the ELF magic.
+func isELF(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	var magic [4]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return false
+	}
+	return string(magic[:]) == "\x7fELF"
+}
+
+// usage prints how the tool is called.
+func usage(w io.Writer, fs *flag.FlagSet) {
+	_, _ = fmt.Fprintf(w, "usage: minimalizer [flags] <binary> [binary...]\n\n")
+	fs.SetOutput(w)
+	fs.PrintDefaults()
+}
+
+func main() {
+	opts, err := parseArgs(os.Args[1:])
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			usage(os.Stdout, opts.fs)
+			return
+		}
+		fmt.Fprintln(os.Stderr, "minimalizer:", err)
+		usage(os.Stderr, opts.fs)
+		os.Exit(2)
+	}
+
+	if opts.showVersion {
 		fmt.Printf("minimalizer %s\n", version)
 		return
 	}
 
-	if flag.NArg() == 0 {
-		flag.Usage()
+	if len(opts.binaries) == 0 {
+		usage(os.Stderr, opts.fs)
 		os.Exit(2)
 	}
-	if pkg.set {
-		// The old form, --package FOLDER BINARY, is easy to type by
-		// mistake now that the flag takes no value.
-		if fi, err := os.Stat(flag.Arg(0)); err == nil && fi.IsDir() {
-			fmt.Fprintf(os.Stderr, "minimalizer: %s is a folder. The tree goes to %s; write --package=DIR to name another folder.\n", flag.Arg(0), defaultRootfs)
-			os.Exit(2)
-		}
-	}
-	if *asJSON && pkg.set {
-		fmt.Fprintln(os.Stderr, "minimalizer: --json and --package cannot be combined")
-		os.Exit(2)
-	}
-	if *stage == "" {
-		fmt.Fprintln(os.Stderr, "minimalizer: the stage name cannot be empty")
-		os.Exit(2)
-	}
-	if strings.Contains(*stage, "/") {
-		fmt.Fprintln(os.Stderr, "minimalizer: the stage name cannot contain a slash")
-		os.Exit(2)
-	}
-	if err := checkWord("stage name", *stage); err != nil {
+	if err := validate(opts); err != nil {
 		fmt.Fprintln(os.Stderr, "minimalizer:", err)
 		os.Exit(2)
 	}
 
-	libs, err := collect(flag.Args(), *ldCache)
+	libs, err := collect(opts.binaries, opts.ldCache)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "minimalizer:", err)
 		os.Exit(1)
 	}
 
 	switch {
-	case pkg.set:
-		dir := pkg.dir
-		if dir == "" {
-			dir = defaultRootfs
-		}
+	case opts.packageDir != "":
 		var abs string
-		abs, err = packageLibs(libs, flag.Args(), dir)
+		abs, err = packageLibs(libs, opts.binaries, opts.packageDir)
 		if err == nil {
-			err = writePackage(os.Stdout, libs, flag.Args(), abs, *stage)
+			err = writePackage(os.Stdout, libs, opts.binaries, abs, opts.stage)
 		}
-	case *asJSON:
-		err = writeJSON(os.Stdout, flag.Args(), libs, *stage)
+	case opts.asJSON:
+		err = writeJSON(os.Stdout, opts.binaries, libs, opts.stage)
 	default:
-		err = writeDockerfile(os.Stdout, libs, *stage)
+		err = writeDockerfile(os.Stdout, libs, opts.stage)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "minimalizer:", err)

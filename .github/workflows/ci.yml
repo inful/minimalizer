@@ -90,13 +90,11 @@ jobs:
             -o dist/minimalizer-${{ matrix.os }}-${{ matrix.arch }} .
 
   docker-build-test:
-    # The Dockerfile lists the source files one by one, so a new file that is
-    # not added there breaks the image build. Build it on every PR to catch
-    # that here instead of at release time.
+    # The image is built on every push and every PR, so a broken Dockerfile
+    # is caught here instead of at release time.
     name: Docker Build Test
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'pull_request'
 
     steps:
       - name: Checkout code

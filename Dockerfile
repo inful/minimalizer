@@ -8,9 +8,9 @@
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod ./
-# The source files are listed one by one: a new file has to be added here, and
-# the test file is left out so a change to it does not rebuild the image.
-COPY deps.go elfinfo.go ldd.go main.go plan.go ./
+# Every source file is copied, so a new file cannot break the image build.
+# The test files come along; go build ignores them.
+COPY *.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /minimalizer .
 
 FROM scratch
