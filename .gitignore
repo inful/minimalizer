@@ -1,0 +1,28 @@
+# Build artifacts
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Throwaway probe files (from sed -i.bak, throwaway scripts, etc.)
+*.bak
+*.bak2
+*.bak3
+*.bak4
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local overrides
+lefthook-local.yml
+
+# Working docs (not part of the project record)
+/PLAN.md
