@@ -54,6 +54,17 @@ jobs:
       - name: Run go test (race)
         run: go test -race -count=1 -timeout 120s ./...
 
+      - name: Check the release config
+        # The release config is only read when a tag is pushed, so a broken
+        # one has to be caught here instead of at release time.
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build
         # The binary is `minimalizer`. Install path: `go install .`.
         run: go build -trimpath -ldflags="-s -w" -o dist/minimalizer .
@@ -100,6 +111,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -113,3 +130,27 @@ jobs:
           cache-to: type=gha,mode=max,scope=buildkit-test
           provenance: false
           sbom: false
+
+      - name: Build the image the tool describes
+        # The statement the tool prints is the product. It is built here,
+        # from the statement itself and not from a hand written Dockerfile,
+        # so a statement that does not build fails in this repository and
+        # not in the build of a user.
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/e2e
+          go build -trimpath -o /tmp/e2e/minimalizer .
+          cd /tmp/e2e
+          ./minimalizer --package=/tmp/e2e/rootfs /bin/ls | grep '^COPY' > copy.txt
+          cat copy.txt
+          {
+            echo "FROM debian:bookworm-slim AS builder"
+            echo "COPY minimalizer /usr/local/bin/minimalizer"
+            echo "RUN minimalizer --package=/tmp/e2e/rootfs /bin/ls"
+            echo "FROM scratch"
+            cat copy.txt
+            echo 'ENTRYPOINT ["/bin/ls"]'
+          } > Dockerfile
+          docker build -t minimalizer-e2e .
+          # the image has to run: the binary and its libraries are in it
+          docker run --rm minimalizer-e2e /bin/ls

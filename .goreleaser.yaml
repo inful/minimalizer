@@ -95,13 +95,10 @@ changelog:
   use: git
   sort: asc
   filters:
+    # The scope of a conventional commit is part of the subject, so
+    # "chore(ci): ..." has to be matched as well as "chore: ...".
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^chore:'
-      - '^ci:'
-      - '^build:'
-      - '^style:'
+      - '^(docs|test|chore|ci|build|style)(\([^)]*\))?:'
   groups:
     - title: Features
       regexp: '^feat'
