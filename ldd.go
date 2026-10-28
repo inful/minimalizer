@@ -14,6 +14,9 @@ type dep struct {
 
 var (
 	reVirtual = regexp.MustCompile(`^\s*(linux-vdso\.so\.1|linux-gate\.so\.1)\s+\(0x[0-9a-fA-F]+\)\s*$`)
+	// The loader prints the main program with an empty name: its address
+	// alone. That is the binary itself, not a library.
+	reMain = regexp.MustCompile(`^\s*\(0x[0-9a-fA-F]+\)\s*$`)
 	// The path may hold a space, the loader prints it as it is.
 	reNamed = regexp.MustCompile(`^\s*(\S+)\s+=>\s+(/.+?)\s*(?:\(0x[0-9a-fA-F]+\))?\s*$`)
 	rePath  = regexp.MustCompile(`^\s*(/.+?)\s+\(0x[0-9a-fA-F]+\)\s*$`)
@@ -33,12 +36,16 @@ func parseLdd(out string) ([]dep, error) {
 		switch {
 		case reVirtual.MatchString(line):
 			// the vDSO lives in the kernel, there is nothing to copy
+		case reMain.MatchString(line):
+			// the main program itself
 		case reNamed.MatchString(line):
 			m := reNamed.FindStringSubmatch(line)
 			deps = append(deps, dep{soname: m[1], path: m[2]})
 		case rePath.MatchString(line):
 			deps = append(deps, dep{path: rePath.FindStringSubmatch(line)[1]})
-		case strings.Contains(line, "=>"):
+		case strings.TrimSpace(line) == "":
+			// nothing on this line
+		default:
 			// a dependency line we do not understand: fail loudly rather
 			// than silently dropping a library from the image.
 			return nil, fmt.Errorf("unrecognised ldd line %q", strings.TrimSpace(line))

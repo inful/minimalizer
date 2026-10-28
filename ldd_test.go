@@ -13,7 +13,8 @@ func TestParseLdd(t *testing.T) {
 	}{
 		{
 			name: "glibc",
-			out: "\tlinux-vdso.so.1 (0x00007ffd8e5f9000)\n" +
+			out: "\t (0x000055d1c1d2e000)\n" +
+				"\tlinux-vdso.so.1 (0x00007ffd8e5f9000)\n" +
 				"\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f2a4c000000)\n" +
 				"\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f2a4c400000)\n" +
 				"\t/lib64/ld-linux-x86-64.so.2 (0x00007f2a4c4a5000)\n",
@@ -44,6 +45,13 @@ func TestParseLdd(t *testing.T) {
 		{
 			name:    "unparsable dependency line",
 			out:     "\tsomething weird => ???\n",
+			wantErr: true,
+		},
+		{
+			// A line without a path is dropped by the loader's format, but
+			// it could be a library: the tool says so instead of losing it.
+			name:    "a line without a path",
+			out:     "\tlibfoo.so.1\n",
 			wantErr: true,
 		},
 	}
