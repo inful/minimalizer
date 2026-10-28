@@ -14,8 +14,9 @@ type dep struct {
 
 var (
 	reVirtual = regexp.MustCompile(`^\s*(linux-vdso\.so\.1|linux-gate\.so\.1)\s+\(0x[0-9a-fA-F]+\)\s*$`)
-	reNamed   = regexp.MustCompile(`^\s*(\S+)\s+=>\s+(/\S+)\s*(?:\(0x[0-9a-fA-F]+\))?\s*$`)
-	rePath    = regexp.MustCompile(`^\s*(/\S+)\s+\(0x[0-9a-fA-F]+\)\s*$`)
+	// The path may hold a space, the loader prints it as it is.
+	reNamed = regexp.MustCompile(`^\s*(\S+)\s+=>\s+(/.+?)\s*(?:\(0x[0-9a-fA-F]+\))?\s*$`)
+	rePath  = regexp.MustCompile(`^\s*(/.+?)\s+\(0x[0-9a-fA-F]+\)\s*$`)
 	// The loader says which library it could not load, either as
 	// "=> not found" or as an error.
 	reMissing  = regexp.MustCompile(`^\s*(\S+)\s+=>\s+not found\s*$`)

@@ -35,6 +35,13 @@ func TestParseLdd(t *testing.T) {
 			},
 		},
 		{
+			name: "a library in a folder with a space",
+			out:  "\tlibspaced.so => /opt/my libs/libspaced.so (0x00007f2a4c000000)\n",
+			want: []dep{
+				{soname: "libspaced.so", path: "/opt/my libs/libspaced.so"},
+			},
+		},
+		{
 			name:    "unparsable dependency line",
 			out:     "\tsomething weird => ???\n",
 			wantErr: true,
