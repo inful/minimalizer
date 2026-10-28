@@ -31,8 +31,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          # No cache: the cache key is built from go.sum, and this project
-          # has no dependencies, so it could never be restored anyway.
+          # No cache: setup-go caches by default, but the key is built from
+          # go.sum, and this project has no dependencies, so it could never
+          # be restored anyway.
+          cache: false
 
       - name: Run go mod tidy
         run: |
@@ -93,6 +95,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: Build ${{ matrix.os }}/${{ matrix.arch }}
         env:
@@ -118,6 +121,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
