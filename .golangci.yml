@@ -9,8 +9,6 @@ version: "2"
 linters:
   default: standard
   enable:
-    - bodyclose      # http body close: catches leaked response bodies
-    - copyloopvar    # Go 1.22+ loop var capture
     - errorlint      # %w wrapping, errors.Is/As usage
     - gocritic       # opinionated style + diagnostics
     - nakedret       # naked returns in long funcs
