@@ -9,6 +9,14 @@ import (
 	"testing"
 )
 
+func TestDefaultLoaderHasNoLoaderForAnotherMachine(t *testing.T) {
+	// A loader of another architecture would answer with a wrong list, so
+	// the stage has to be reported as not having a loader at all.
+	if _, err := defaultLoader(elf.EM_386); err == nil {
+		t.Error("defaultLoader(EM_386) found a loader, want none")
+	}
+}
+
 func TestDefaultLoaderTakesTheMachineOfTheLibrary(t *testing.T) {
 	loader, err := defaultLoader(elf.EM_NONE)
 	if err != nil {

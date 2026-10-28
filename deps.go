@@ -84,16 +84,13 @@ func lddDeps(bin string, info elfInfo) ([]dep, error) {
 //
 // Only a loader built for the same machine as the library is taken: a stage
 // that has the libraries of more than one architecture installed must not
-// use the loader of another one.
+// use the loader of another one. A loader of another architecture would
+// answer with a wrong list, so the stage is reported as not having one.
 func defaultLoader(machine elf.Machine) (string, error) {
-	var first string
 	for _, pattern := range []string{"/lib64/ld-*.so.*", "/lib/ld-*.so.*", "/usr/lib64/ld-*.so.*", "/usr/lib/ld-*.so.*"} {
 		matches, err := filepath.Glob(pattern)
 		if err != nil || len(matches) == 0 {
 			continue
-		}
-		if first == "" {
-			first = matches[0]
 		}
 		if machine == elf.EM_NONE {
 			return matches[0], nil
@@ -104,8 +101,8 @@ func defaultLoader(machine elf.Machine) (string, error) {
 			}
 		}
 	}
-	if first != "" {
-		return first, nil
+	if machine != elf.EM_NONE {
+		return "", fmt.Errorf("this library is for %s, and this stage has no loader for it", machine)
 	}
 	return "", fmt.Errorf("cannot find the system loader")
 }
