@@ -272,8 +272,11 @@ because the kernel loads it by absolute path.
   path. Libraries outside `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64` and
   `/usr/local/lib` (for example in `/opt`) are only found again if the cache
   is copied too, so use `--ld-cache` in that case. The tool prints a warning
-  for every binary that needs such a library and has no search path of its own
-  that covers it.
+  for every library that the loader can only find through its cache. A search
+  path of the binary covers the libraries it asks for itself; only `DT_RPATH`
+  is passed on to the libraries of a library, a `DT_RUNPATH` is not - so a
+  library of a library can need the cache even though the binary has a
+  runpath that covers its folder.
 - A path that cannot be written in a Dockerfile line - one with a space, a
   quote or a newline in it - is refused, because the tool prints the paths
   into `COPY` statements and comments.
