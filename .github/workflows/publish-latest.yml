@@ -1,13 +1,23 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 # The release is a draft while it is built, so the notes can be read before
-# they ship. The image is pushed with the tags of the version, but the
-# latest tag moves only now, when the release is published: the release page
-# and the image must not disagree about which version is the newest.
+# they ship. The image is pushed with the tag of the version only: the latest
+# tag and the tag of the series move here, when the release is published, so
+# no tag points at a version that has no release page yet.
+#
+# The workflow can also be started by hand with the tag of the release, for
+# the case where the event did not arrive: an event caused by the
+# GITHUB_TOKEN does not start a workflow.
 name: publish latest
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The tag of the published release, e.g. v0.1.2"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -17,6 +27,9 @@ permissions:
 jobs:
   latest:
     name: Move the latest tag
+    # A prerelease is not the newest version for the people who pull the
+    # latest tag, so it leaves the tags where they are.
+    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     steps:
       - name: Set up Docker Buildx
@@ -30,10 +43,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Tag the image as latest
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           set -euo pipefail
-          tag="${{ github.event.release.tag_name }}"
-          version="${tag#v}"
+          version="${TAG#v}"
+          series="v${version%.*}"
           docker buildx imagetools create \
             --tag ghcr.io/inful/minimalizer:latest \
+            --tag "ghcr.io/inful/minimalizer:${series}" \
             "ghcr.io/inful/minimalizer:${version}"

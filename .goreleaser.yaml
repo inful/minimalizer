@@ -74,13 +74,12 @@ dockers_v2:
       - minimalizer
     images:
       - "ghcr.io/inful/minimalizer"
-    # The version of the release and the series it belongs to. The latest
-    # tag is not here: the release is a draft while it is built, and the
-    # latest tag moves when the release is published, so the release page
-    # and the image never disagree about which version is the newest.
+    # The version of the release only. The latest tag and the tag of the
+    # series move when the release is published, in the publish-latest
+    # workflow: the release is a draft while it is built, and no tag may
+    # point at a version that has no release page yet.
     tags:
       - "{{ .Version }}"
-      - "v{{ .Major }}.{{ .Minor }}"
     platforms:
       - linux/amd64
       - linux/arm64
