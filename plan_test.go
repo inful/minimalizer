@@ -84,22 +84,55 @@ func TestResolveRejectsRealPathsThatBreakTheDockerfile(t *testing.T) {
 
 func TestNeedsCache(t *testing.T) {
 	tests := []struct {
-		dest  string
-		paths []string
+		name  string
+		lib   lib
+		paths searchPaths
 		want  bool
 	}{
-		{dest: "/lib/x86_64-linux-gnu/libc.so.6", want: false},
-		{dest: "/usr/lib/aarch64-linux-gnu/libc.so.6", want: false},
-		{dest: "/lib64/ld-linux-x86-64.so.2", want: false},
-		{dest: "/usr/local/lib/libfoo.so", want: false},
-		{dest: "/opt/lib/libfoo.so", want: true},
-		{dest: "/opt/lib/libfoo.so", paths: []string{"/opt/lib"}, want: false},
-		{dest: "/go/pkg/lib/libfoo.so", paths: []string{"/go/pkg/lib"}, want: false},
+		{
+			name: "a library in a default folder",
+			lib:  lib{soname: "libc.so.6", dest: "/lib/x86_64-linux-gnu/libc.so.6"},
+		},
+		{
+			name: "a library in /usr/local/lib",
+			lib:  lib{soname: "libfoo.so", dest: "/usr/local/lib/libfoo.so"},
+		},
+		{
+			name: "a library outside every default folder",
+			lib:  lib{soname: "libfoo.so", dest: "/opt/lib/libfoo.so"},
+			want: true,
+		},
+		{
+			name:  "a library under the rpath of the binary",
+			lib:   lib{soname: "libfoo.so", dest: "/opt/lib/libfoo.so"},
+			paths: searchPaths{rpath: []string{"/opt/lib"}},
+		},
+		{
+			name:  "a library under the runpath of the binary",
+			lib:   lib{soname: "libfoo.so", dest: "/opt/lib/libfoo.so"},
+			paths: searchPaths{needed: []string{"libfoo.so"}, runpath: []string{"/opt/lib"}},
+		},
+		{
+			// The loader does not pass a runpath on to the libraries of
+			// a library, so this one is only found through the cache.
+			name:  "a library of a library under the runpath of the binary",
+			lib:   lib{soname: "libbar.so", dest: "/opt/lib/libbar.so"},
+			paths: searchPaths{needed: []string{"libfoo.so"}, runpath: []string{"/opt/lib"}},
+			want:  true,
+		},
+		{
+			// An rpath is inherited, so this one is found.
+			name:  "a library of a library under the rpath of the binary",
+			lib:   lib{soname: "libbar.so", dest: "/opt/lib/libbar.so"},
+			paths: searchPaths{needed: []string{"libfoo.so"}, rpath: []string{"/opt/lib"}},
+		},
 	}
 	for _, tc := range tests {
-		if got := needsCache(tc.dest, tc.paths); got != tc.want {
-			t.Errorf("needsCache(%q, %v) = %v, want %v", tc.dest, tc.paths, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := needsCache(tc.lib, tc.paths); got != tc.want {
+				t.Errorf("needsCache(%q) = %v, want %v", tc.lib.dest, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -112,9 +145,9 @@ func TestWarnNeedsCache(t *testing.T) {
 	}}
 	// The first binary finds the library through its rpath, the second one
 	// does not: the second one needs the cache in the image.
-	rpaths := map[string][]string{
-		"/out/app":    {"/opt/lib"},
-		"/out/worker": nil,
+	paths := map[string]searchPaths{
+		"/out/app":    {rpath: []string{"/opt/lib"}},
+		"/out/worker": {},
 	}
 
 	var sb strings.Builder
@@ -124,7 +157,7 @@ func TestWarnNeedsCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stderr = w
-	warnNeedsCache(libs, rpaths)
+	warnNeedsCache(libs, paths)
 	_ = w.Close()
 	os.Stderr = old
 	if _, err := io.Copy(&sb, r); err != nil {

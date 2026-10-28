@@ -58,6 +58,14 @@ type lib struct {
 // neither a cache nor a search path in the binary to guide it.
 var defaultDirs = []string{"/lib", "/usr/lib", "/lib64", "/usr/lib64", "/usr/local/lib", "/usr/local/lib64"}
 
+// searchPaths are the places the loader looks for the libraries of one
+// binary.
+type searchPaths struct {
+	needed  []string // the sonames the binary asks for itself
+	rpath   []string // DT_RPATH: the libraries of the binary inherit it
+	runpath []string // DT_RUNPATH: only the libraries the binary asks for
+}
+
 // collect resolves the shared libraries of every binary into a deduplicated
 // and deterministic list.
 func collect(binaries []string, withCache bool) ([]lib, error) {
@@ -65,13 +73,13 @@ func collect(binaries []string, withCache bool) ([]lib, error) {
 	// The search paths of each binary, so a library is judged against the
 	// binary that needs it and not against the ones that happen to be
 	// analysed in the same run.
-	rpaths := map[string][]string{}
+	paths := map[string]searchPaths{}
 	for _, bin := range binaries {
 		info, err := readELF(bin)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", bin, err)
 		}
-		rpaths[bin] = info.rpaths
+		paths[bin] = searchPaths{needed: info.needed, rpath: info.rpath, runpath: info.runpath}
 
 		deps, err := lddDeps(bin, info)
 		if err != nil {
@@ -102,7 +110,7 @@ func collect(binaries []string, withCache bool) ([]lib, error) {
 		return libs[i].dest < libs[j].dest
 	})
 
-	warnNeedsCache(libs, rpaths)
+	warnNeedsCache(libs, paths)
 	return libs, nil
 }
 
@@ -110,13 +118,13 @@ func collect(binaries []string, withCache bool) ([]lib, error) {
 // through its cache. The search paths of each binary are looked at on its
 // own: a library that one binary finds through its rpath can still be a
 // problem for another binary that has none.
-func warnNeedsCache(libs []lib, rpaths map[string][]string) {
+func warnNeedsCache(libs []lib, paths map[string]searchPaths) {
 	for _, l := range libs {
 		if l.kind != kindLib {
 			continue
 		}
 		for _, bin := range l.usedBy {
-			if needsCache(l.dest, rpaths[bin]) {
+			if needsCache(l, paths[bin]) {
 				fmt.Fprintf(os.Stderr, "minimalizer: warning: %s is outside the loader's default search path of %s, the image may need --ld-cache\n", l.dest, bin)
 				break
 			}
@@ -210,9 +218,22 @@ func rank(l lib) int {
 }
 
 // needsCache reports whether the loader can only find a library through its
-// cache: it is neither in a default folder nor in a search path of the binary.
-func needsCache(dest string, searchPaths []string) bool {
-	return !underAny(dest, defaultDirs) && !underAny(dest, searchPaths)
+// cache: it is neither in a default folder nor in a search path that applies
+// to it.
+//
+// DT_RPATH is inherited by the libraries of the binary, DT_RUNPATH is not:
+// it only applies to the libraries the binary asks for itself. A library of a
+// library is therefore only covered by the rpath.
+func needsCache(l lib, paths searchPaths) bool {
+	if underAny(l.dest, defaultDirs) || underAny(l.dest, paths.rpath) {
+		return false
+	}
+	// The runpath of the binary only applies to the libraries the binary
+	// asks for itself. The libraries of a library do not inherit it.
+	if slices.Contains(paths.needed, l.soname) && underAny(l.dest, paths.runpath) {
+		return false
+	}
+	return true
 }
 
 // underAny reports whether a path is inside one of the folders.

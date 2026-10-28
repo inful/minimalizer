@@ -12,7 +12,8 @@ import (
 type elfInfo struct {
 	interp  string      // the ELF interpreter, empty for a statically linked binary
 	needed  []string    // the libraries the binary asks for
-	rpaths  []string    // the search paths that are baked into the binary
+	rpath   []string    // DT_RPATH: the libraries of the binary inherit it
+	runpath []string    // DT_RUNPATH: only the libraries the binary asks for
 	machine elf.Machine // the architecture the binary is built for
 }
 
@@ -48,9 +49,13 @@ func readELF(path string) (elfInfo, error) {
 		switch tag {
 		case elf.DT_NEEDED:
 			info.needed = values
-		default:
+		case elf.DT_RPATH:
 			for _, v := range values {
-				info.rpaths = append(info.rpaths, strings.Split(v, ":")...)
+				info.rpath = append(info.rpath, strings.Split(v, ":")...)
+			}
+		case elf.DT_RUNPATH:
+			for _, v := range values {
+				info.runpath = append(info.runpath, strings.Split(v, ":")...)
 			}
 		}
 	}
