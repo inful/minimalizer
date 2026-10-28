@@ -1,6 +1,7 @@
 package main
 
 import (
+	"debug/elf"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -31,7 +32,7 @@ func TestReadELF(t *testing.T) {
 }
 
 func TestReadELFLibrary(t *testing.T) {
-	loader, err := defaultLoader()
+	loader, err := defaultLoader(elf.EM_NONE)
 	if err != nil {
 		t.Skip("no system loader on this system")
 	}

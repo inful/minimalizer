@@ -3,10 +3,31 @@
 package main
 
 import (
+	"debug/elf"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestDefaultLoaderTakesTheMachineOfTheLibrary(t *testing.T) {
+	loader, err := defaultLoader(elf.EM_NONE)
+	if err != nil {
+		t.Skip("no system loader on this system")
+	}
+	info, err := readELF(loader)
+	if err != nil {
+		t.Fatalf("readELF(%s) error = %v", loader, err)
+	}
+	// A stage with the libraries of more than one architecture installed
+	// must still get the loader of the machine it is asked about.
+	got, err := defaultLoader(info.machine)
+	if err != nil {
+		t.Fatalf("defaultLoader(%v) error = %v", info.machine, err)
+	}
+	if !isForMachine(got, info.machine) {
+		t.Errorf("defaultLoader(%v) = %q, want a loader for that machine", info.machine, got)
+	}
+}
 
 func TestLddDeps(t *testing.T) {
 	// The test binary is a Go program. It is static without cgo and

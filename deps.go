@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"debug/elf"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -31,7 +32,7 @@ func lddDeps(bin string, info elfInfo) ([]dep, error) {
 		// A shared library has no interpreter of its own, so the system
 		// loader has to list its needs.
 		var err error
-		interp, err = defaultLoader()
+		interp, err = defaultLoader(info.machine)
 		if err != nil {
 			return nil, err
 		}
@@ -80,13 +81,43 @@ func lddDeps(bin string, info elfInfo) ([]dep, error) {
 }
 
 // defaultLoader finds the system loader, used for shared libraries.
-func defaultLoader() (string, error) {
+//
+// Only a loader built for the same machine as the library is taken: a stage
+// that has the libraries of more than one architecture installed must not
+// use the loader of another one.
+func defaultLoader(machine elf.Machine) (string, error) {
+	var first string
 	for _, pattern := range []string{"/lib64/ld-*.so.*", "/lib/ld-*.so.*", "/usr/lib64/ld-*.so.*", "/usr/lib/ld-*.so.*"} {
-		if matches, err := filepath.Glob(pattern); err == nil && len(matches) > 0 {
+		matches, err := filepath.Glob(pattern)
+		if err != nil || len(matches) == 0 {
+			continue
+		}
+		if first == "" {
+			first = matches[0]
+		}
+		if machine == elf.EM_NONE {
 			return matches[0], nil
 		}
+		for _, m := range matches {
+			if isForMachine(m, machine) {
+				return m, nil
+			}
+		}
+	}
+	if first != "" {
+		return first, nil
 	}
 	return "", fmt.Errorf("cannot find the system loader")
+}
+
+// isForMachine reports whether the file is built for the given machine.
+func isForMachine(path string, machine elf.Machine) bool {
+	f, err := elf.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	return f.Machine == machine
 }
 
 // loaderEnv drops the variables that would make the loader behave

@@ -10,9 +10,10 @@ import (
 
 // elfInfo is what the tool needs to know about the binary itself.
 type elfInfo struct {
-	interp string   // the ELF interpreter, empty for a statically linked binary
-	needed []string // the libraries the binary asks for
-	rpaths []string // the search paths that are baked into the binary
+	interp  string      // the ELF interpreter, empty for a statically linked binary
+	needed  []string    // the libraries the binary asks for
+	rpaths  []string    // the search paths that are baked into the binary
+	machine elf.Machine // the architecture the binary is built for
 }
 
 // readELF reads the parts of the binary we care about. It refuses anything
@@ -28,7 +29,7 @@ func readELF(path string) (elfInfo, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	info := elfInfo{}
+	info := elfInfo{machine: f.Machine}
 	for _, p := range f.Progs {
 		if p.Type != elf.PT_INTERP {
 			continue
