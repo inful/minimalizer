@@ -12,4 +12,6 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /minimalizer .
 
 FROM scratch
 COPY --from=build /minimalizer /minimalizer
+# So the image can be run, not only copied from.
+ENTRYPOINT ["/minimalizer"]
 LABEL org.opencontainers.image.source="https://github.com/inful/minimalizer"
