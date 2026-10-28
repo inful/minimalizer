@@ -76,16 +76,17 @@ jobs:
         run: go build -trimpath -ldflags="-s -w" -o dist/minimalizer .
 
   build-matrix:
-    # Compile on every supported platform, so a break that only happens on
-    # one of them shows up before the tag and not during a release. The tool
-    # only RUNS on Linux (it asks a binary's ELF interpreter for its
-    # libraries), so the release ships Linux binaries only.
+    # Compile on the platforms the release ships, so a break that only
+    # happens on one of them shows up before the tag and not during a
+    # release. The tool only RUNS on Linux (it asks a binary's ELF
+    # interpreter for its libraries) and has no OS-specific code, so a
+    # build for darwin or windows would compile the same files.
     name: Build ${{ matrix.os }} / ${{ matrix.arch }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [linux, darwin, windows]
+        os: [linux]
         arch: [amd64, arm64]
     steps:
       - name: Checkout
