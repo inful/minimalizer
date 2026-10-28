@@ -20,11 +20,20 @@ const (
 // badPathChars would break the Dockerfile lines we print.
 const badPathChars = " \t\n#\"'$"
 
-// markerName is the file inside the package folder that says the folder
-// belongs to minimalizer, so it may be replaced on the next run. It lives
-// inside the folder on purpose: a file next to the folder must never give
-// the tool permission to delete it.
+// markerName is the file next to the package folder that says the folder
+// belongs to minimalizer, so it may be replaced on the next run.
+//
+// It lives NEXT TO the folder on purpose. Inside it, it would be copied into
+// the image, and the statements would have to name every top folder of the
+// tree — and those differ per platform (lib64 on amd64, lib on arm64), so
+// one Dockerfile could not build both.
+//
+// The content is checked as well: a file that happens to have the same name
+// does not give the tool permission to delete anything.
 const markerName = ".minimalizer"
+
+// markerContent marks a folder as minimalizer's own.
+const markerContent = "minimalizer package folder\n"
 
 // lib is one file that has to end up in the final image.
 type lib struct {
@@ -256,7 +265,7 @@ func packageLibs(libs []lib, dir string) (string, error) {
 	}
 	// Mark the folder before filling it, so a run that fails in the middle
 	// can still be replaced by the next one.
-	if err := os.WriteFile(filepath.Join(abs, markerName), nil, 0o644); err != nil {
+	if err := os.WriteFile(abs+markerName, []byte(markerContent), 0o644); err != nil {
 		return "", fmt.Errorf("writing the marker: %w", err)
 	}
 	for _, l := range libs {
@@ -273,7 +282,7 @@ func packageLibs(libs []lib, dir string) (string, error) {
 
 // prepareDir makes sure dir is an empty folder that belongs to minimalizer.
 func prepareDir(dir string) error {
-	if _, err := os.Stat(filepath.Join(dir, markerName)); err == nil {
+	if data, err := os.ReadFile(dir + markerName); err == nil && string(data) == markerContent {
 		// we made this folder before, so we may replace it
 		return os.RemoveAll(dir)
 	}
@@ -290,50 +299,20 @@ func prepareDir(dir string) error {
 	return nil
 }
 
-// writePackage prints the statements that move the packaged files into the
-// final image. One statement per top folder, so the marker file inside the
-// package folder stays out of the image.
+// writePackage prints the statement that moves the packaged files into the
+// final image. One statement for the whole tree, so the same Dockerfile
+// builds every platform: the top folders of the tree differ per platform.
 func writePackage(w io.Writer, libs []lib, dir, stage string) error {
+	if len(libs) == 0 {
+		// Nothing to copy: the binary is static, and there is no folder
+		// to point at.
+		return nil
+	}
 	if err := writeComments(w, libs); err != nil {
 		return err
 	}
-	for _, top := range topFolders(libs) {
-		src := filepath.Join(dir, top.name)
-		if top.isDir {
-			if _, err := fmt.Fprintf(w, "COPY --from=%s %s/ /%s/\n", stage, src, top.name); err != nil {
-				return err
-			}
-			continue
-		}
-		if _, err := fmt.Fprintf(w, "COPY --from=%s %s /%s\n", stage, src, top.name); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// topEntry is one top level entry of the packaged tree.
-type topEntry struct {
-	name  string
-	isDir bool
-}
-
-// topFolders returns the top level entries of the packaged tree, in order.
-// The marker file is not one of them: it belongs to the tool, not to the
-// image.
-func topFolders(libs []lib) []topEntry {
-	seen := map[string]bool{}
-	var tops []topEntry
-	for _, l := range libs {
-		parts := strings.Split(strings.TrimPrefix(l.dest, "/"), "/")
-		if parts[0] == "" || parts[0] == markerName || seen[parts[0]] {
-			continue
-		}
-		seen[parts[0]] = true
-		tops = append(tops, topEntry{name: parts[0], isDir: len(parts) > 1})
-	}
-	sort.Slice(tops, func(i, j int) bool { return tops[i].name < tops[j].name })
-	return tops
+	_, err := fmt.Fprintf(w, "COPY --from=%s %s/ /\n", stage, dir)
+	return err
 }
 
 // copyFile copies a file, keeping its permissions. It writes to a temporary

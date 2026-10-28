@@ -66,8 +66,7 @@ RUN go build -o /out/app ./cmd/app && minimalizer --package /out/rootfs /out/app
 
 FROM scratch
 COPY --from=builder /out/app /app
-COPY --from=builder /out/rootfs/lib/ /lib/
-COPY --from=builder /out/rootfs/lib64/ /lib64/
+COPY --from=builder /out/rootfs/ /
 ```
 
 Once the image is pushed, the same works from a registry:
@@ -124,8 +123,7 @@ $ minimalizer --package /out/rootfs /out/app
 # (ELF interpreter) /lib64/ld-linux-x86-64.so.2 <- /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 # libc.so.6 /lib/x86_64-linux-gnu/libc.so.6 <- /usr/lib/x86_64-linux-gnu/libc.so.6
 # libpcre2-8.so.0 /lib/x86_64-linux-gnu/libpcre2-8.so.0 <- /usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.11.2
-COPY --from=builder /out/rootfs/lib/ /lib/
-COPY --from=builder /out/rootfs/lib64/ /lib64/
+COPY --from=builder /out/rootfs/ /
 ```
 
 ```
@@ -137,20 +135,24 @@ COPY --from=builder /out/rootfs/lib64/ /lib64/
 Everything in that tree is a regular file (permissions are kept, so the
 interpreter stays executable) and there is not a single symlink in it, which
 is what kaniko needs. `COPY` of a directory copies its *contents*, so the
-trailing slash on the source puts the files at the root of the image. There is
-one statement per top folder, so nothing but the libraries ends up in the
-image.
+trailing slash on the source puts the files at the root of the image.
+
+One statement moves the whole tree, so the same Dockerfile builds every
+platform: the top folders of the tree differ per platform (`lib64` on amd64,
+`lib` on arm64), and a statement per folder would break on the other one.
 
 The folder is emptied on every run, so files from an earlier run never end up
 in the image. To be sure it never touches something you care about, the tool
 only replaces a folder that it made itself - it leaves a `.minimalizer` file
-inside it - or a folder that is empty. Any other folder is refused:
+*next* to it - or a folder that is empty. Any other folder is refused:
 
 ```
 minimalizer: refusing to write into /usr: it is not empty and minimalizer did not make it
 ```
 
-The `.minimalizer` file is empty and never reaches the image.
+The `.minimalizer` file lives next to the folder, so it never reaches the
+image, and only a file with exactly the content the tool writes gives it
+permission to replace the folder.
 
 That makes the whole thing run inside `docker build`:
 
@@ -163,8 +165,7 @@ RUN go build -o /out/app ./cmd/app && minimalizer --package /out/rootfs /out/app
 
 FROM scratch
 COPY --from=builder /out/app /app
-COPY --from=builder /out/rootfs/lib/ /lib/
-COPY --from=builder /out/rootfs/lib64/ /lib64/
+COPY --from=builder /out/rootfs/ /
 ```
 
 The trailing `RUN` prints the statements to the build log; copy them into the

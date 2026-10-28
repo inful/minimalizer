@@ -288,36 +288,9 @@ func TestWritePackage(t *testing.T) {
 	if err := writePackage(&sb, libs, "/out/rootfs", "builder"); err != nil {
 		t.Fatal(err)
 	}
-	want := "COPY --from=builder /out/rootfs/lib/ /lib/\n" +
-		"COPY --from=builder /out/rootfs/lib64/ /lib64/\n"
+	want := "COPY --from=builder /out/rootfs/ /\n"
 	if !strings.Contains(sb.String(), want) {
 		t.Errorf("output %q does not contain %q", sb.String(), want)
-	}
-	// the marker file must not end up in the image
-	if strings.Contains(sb.String(), markerName) {
-		t.Errorf("output %q copies the marker file", sb.String())
-	}
-}
-
-func TestTopFolders(t *testing.T) {
-	libs := []lib{
-		{dest: "/lib/x86_64-linux-gnu/libc.so.6"},
-		{dest: "/lib/x86_64-linux-gnu/libm.so.6"},
-		{dest: "/lib64/ld-linux-x86-64.so.2"},
-		{dest: "/libc.so.6"},
-	}
-	got := topFolders(libs)
-	if len(got) != 3 {
-		t.Fatalf("topFolders() = %v, want three entries", got)
-	}
-	if got[0].name != "lib" || !got[0].isDir {
-		t.Errorf("topFolders()[0] = %v, want the folder lib", got[0])
-	}
-	if got[1].name != "lib64" || !got[1].isDir {
-		t.Errorf("topFolders()[1] = %v, want the folder lib64", got[1])
-	}
-	if got[2].name != "libc.so.6" || got[2].isDir {
-		t.Errorf("topFolders()[2] = %v, want the file libc.so.6", got[2])
 	}
 }
 
