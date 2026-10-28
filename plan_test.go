@@ -382,6 +382,34 @@ func TestPackageLibsRemovesLeftoverTempFiles(t *testing.T) {
 	}
 }
 
+func TestPackageLibsRefusesAForeignMarkerFile(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "app")
+	if err := os.WriteFile(bin, []byte("elf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pkg := filepath.Join(dir, "rootfs")
+	if err := os.MkdirAll(pkg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A file of the user with the name of the marker must not be
+	// overwritten, not even when the folder next to it is empty.
+	marker := pkg + markerName
+	if err := os.WriteFile(marker, []byte("my own file\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := packageLibs(nil, []string{bin}, pkg); err == nil {
+		t.Error("packageLibs() wrote next to a file that is not ours")
+	}
+	got, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "my own file\n" {
+		t.Errorf("the marker file was changed: %q", got)
+	}
+}
+
 func TestCopyFileOntoItself(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "libc.so.6")

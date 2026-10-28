@@ -292,7 +292,8 @@ func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
 		// Nothing to copy, so there is no folder to make.
 		return treeAbs, nil
 	}
-	if err := prepareDir(treeAbs); err != nil {
+	leftovers, err := prepareDir(treeAbs)
+	if err != nil {
 		return "", err
 	}
 	if err := os.MkdirAll(treeAbs, 0o755); err != nil {
@@ -303,8 +304,10 @@ func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
 	}
 	// A run that was killed while copying left temporary files behind.
 	// They would end up in the image, so they go before anything is copied.
-	if err := removeTempFiles(treeAbs); err != nil {
-		return "", err
+	for _, leftover := range leftovers {
+		if err := os.Remove(leftover); err != nil {
+			return "", fmt.Errorf("removing %s: %w", leftover, err)
+		}
 	}
 	// Mark the folder before filling it, so a run that fails in the middle
 	// can still be added to by the next one.
@@ -343,75 +346,71 @@ func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
 	return treeAbs, nil
 }
 
-// removeTempFiles deletes the temporary files of a run that was killed while
-// copying. They live inside the tree, so they would end up in the image.
-func removeTempFiles(dir string) error {
-	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+// prepareDir makes sure dir is a folder that belongs to minimalizer. It
+// returns the temporary files of a run that was killed, which the caller
+// has to delete before it copies anything.
+func prepareDir(dir string) ([]string, error) {
+	marker := dir + markerName
+	ours := false
+	if data, err := os.ReadFile(marker); err == nil {
+		if string(data) != markerContent {
+			// The file next to the folder is not ours. It must not be
+			// overwritten either.
+			return nil, fmt.Errorf("refusing to write into %s: %s is not a minimalizer marker file", dir, marker)
+		}
+		// we made this folder before, so we may add to it
+		ours = true
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("reading %s: %w", marker, err)
+	} else {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return nil
+				return nil, nil
 			}
-			return err
+			return nil, fmt.Errorf("reading %s: %w", dir, err)
 		}
-		if d.IsDir() || !strings.HasPrefix(d.Name(), tempPrefix) {
-			return nil
+		if len(entries) == 0 {
+			return nil, nil
 		}
-		if err := os.Remove(path); err != nil {
-			return fmt.Errorf("removing %s: %w", path, err)
-		}
-		return nil
-	})
+	}
+	// The folder is ours, or it holds nothing but the temporary files of a
+	// run that was killed. Those are empty as far as the user is concerned.
+	leftovers, onlyLeftovers, err := scanTree(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !ours && !onlyLeftovers {
+		return nil, fmt.Errorf("refusing to write into %s: it is not empty and minimalizer did not make it", dir)
+	}
+	return leftovers, nil
 }
 
-// prepareDir makes sure dir is a folder that belongs to minimalizer.
-func prepareDir(dir string) error {
-	if data, err := os.ReadFile(dir + markerName); err == nil && string(data) == markerContent {
-		// we made this folder before, so we may add to it
-		return nil
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("reading %s: %w", dir, err)
-	}
-	if len(entries) == 0 {
-		return nil
-	}
-	// A folder that holds nothing but the temporary files of a run that
-	// was killed is empty as far as the user is concerned.
-	onlyTemp, err := onlyTempFiles(dir)
-	if err != nil {
-		return err
-	}
-	if onlyTemp {
-		return nil
-	}
-	return fmt.Errorf("refusing to write into %s: it is not empty and minimalizer did not make it", dir)
-}
-
-// onlyTempFiles reports whether every file in dir is a temporary file of a
-// killed run.
-func onlyTempFiles(dir string) (bool, error) {
-	only := true
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+// scanTree walks dir once. It returns the temporary files of a run that was
+// killed and whether the folder holds nothing else.
+func scanTree(dir string) (leftovers []string, onlyLeftovers bool, err error) {
+	onlyLeftovers = true
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if os.IsNotExist(err) {
+				return fs.SkipAll
+			}
 			return err
 		}
 		if d.IsDir() {
 			return nil
 		}
-		if !strings.HasPrefix(d.Name(), tempPrefix) {
-			only = false
-			return fs.SkipAll
+		if strings.HasPrefix(d.Name(), tempPrefix) {
+			leftovers = append(leftovers, path)
+			return nil
 		}
-		return nil
+		onlyLeftovers = false
+		return fs.SkipAll
 	})
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
-	return only, nil
+	return leftovers, onlyLeftovers, nil
 }
 
 // writePackage prints the statement that moves the packaged files into the
