@@ -39,7 +39,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          # No cache: setup-go caches by default, but the key is built from
+          # go.sum, and this project has no dependencies, so it could never
+          # be restored anyway.
+          cache: false
 
       - name: Set up QEMU
         # The image is built for arm64 and armv7 as well, so the runner
