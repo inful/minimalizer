@@ -107,6 +107,11 @@ func TestValidate(t *testing.T) {
 			want: "Dockerfile line",
 		},
 		{
+			name: "a stage name with a colon",
+			opts: options{stage: "my:stage", binaries: []string{bin}},
+			want: "not a Docker stage name",
+		},
+		{
 			name: "a package folder with a space",
 			opts: options{stage: "builder", packageDir: "/out/my tree", binaries: []string{bin}},
 			want: "Dockerfile line",
@@ -160,6 +165,15 @@ func TestCheckPackageForm(t *testing.T) {
 	}
 	// the new form: several binaries.
 	if err := checkPackageForm(defaultRootfs, []string{bin, other}); err != nil {
+		t.Errorf("checkPackageForm() error = %v, want none", err)
+	}
+	// the new form: the first binary is not an ELF file. The error about
+	// the file itself is better than advice about the flag.
+	script := filepath.Join(dir, "script.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkPackageForm(defaultRootfs, []string{script, bin}); err != nil {
 		t.Errorf("checkPackageForm() error = %v, want none", err)
 	}
 }

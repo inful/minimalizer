@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -23,6 +24,9 @@ var version = "dev"
 // without a folder. It is a fixed name so the path shows up once in the
 // Dockerfile: the RUN that fills it, and the COPY that moves it.
 const defaultRootfs = "/rootfs"
+
+// reStageName is what Docker accepts as the name of a stage.
+var reStageName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
 
 // packageFlag is the --package flag. It takes no value: the tree goes to
 // defaultRootfs. Write --package=DIR to name another folder.
@@ -108,6 +112,11 @@ func validate(opts *options) error {
 	if err := checkWord("stage name", opts.stage); err != nil {
 		return err
 	}
+	if !reStageName.MatchString(opts.stage) {
+		// A name Docker cannot use as a stage, for example one with a
+		// colon: Docker would read it as the name of an image.
+		return fmt.Errorf("the stage name %q is not a Docker stage name (letters, digits, _ . and - only)", opts.stage)
+	}
 	if opts.packageDir != "" {
 		// The folder goes into a COPY statement, so it must not be able
 		// to break that line.
@@ -136,15 +145,19 @@ func checkPackageForm(dir string, binaries []string) error {
 		return nil
 	}
 	first := binaries[0]
-	if fi, err := os.Stat(first); err == nil && fi.IsDir() {
-		return fmt.Errorf("%s is a folder. The tree goes to %s; write --package=DIR to name another folder", first, dir)
-	}
-	if isELF(first) {
+	if fi, err := os.Stat(first); err == nil {
+		if fi.IsDir() {
+			return fmt.Errorf("%s is a folder. The tree goes to %s; write --package=DIR to name another folder", first, dir)
+		}
+		// The file is there. If it is not a binary, the error about the
+		// file itself is better than advice about the flag.
 		return nil
 	}
+	// The first argument does not exist. That is what the old form looks
+	// like: the folder is the one the tool is going to create.
 	for _, b := range binaries[1:] {
 		if isELF(b) {
-			return fmt.Errorf("%s is not a binary. The tree goes to %s; write --package=DIR to name another folder", first, dir)
+			return fmt.Errorf("%s does not exist. The tree goes to %s; write --package=DIR to name another folder", first, dir)
 		}
 	}
 	return nil
