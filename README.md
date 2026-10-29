@@ -131,7 +131,8 @@ matches is analysed. A file that is not a binary and a folder are skipped, so
 a pattern can point at the folder a distributor ships its binaries in:
 
 ```
-$ minimalizer --package /app '/opt/vendor/bin/*'
+$ minimalizer --package '/opt/vendor/bin/*'
+minimalizer: /opt/vendor/bin/* matches 2 binaries: /opt/vendor/bin/app, /opt/vendor/bin/worker
 # (ELF interpreter) /lib64/ld-linux-x86-64.so.2 <- /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 # libc.so.6 /lib/x86_64-linux-gnu/libc.so.6 <- /usr/lib/x86_64-linux-gnu/libc.so.6
 # binary /opt/vendor/bin/app
@@ -139,8 +140,11 @@ $ minimalizer --package /app '/opt/vendor/bin/*'
 COPY --from=builder /rootfs/ /
 ```
 
-A pattern that matches nothing is an error, so a typo cannot leave the image
-without the binaries.
+The binaries a pattern matched are named on stderr, so a pattern that matches
+less than you think is visible. A pattern that matches nothing, or nothing but
+files that are not binaries, is an error, so a typo cannot leave the image
+without the binaries. A file whose name holds a glob character is that file and
+not a pattern.
 
 `--json` returns the same information in machine readable form:
 
@@ -311,7 +315,9 @@ because the kernel loads it by absolute path.
 - A pattern is expanded by the tool. The shell expands it before the tool
   sees it when it is not quoted, so quote a pattern that the tool should
   expand. The glob of the standard library matches one level of folders:
-  `**` is refused, because it would match fewer binaries than it looks.
+  `**` is refused, because it would match fewer binaries than it looks. A
+  file whose name holds a glob character is that file and not a pattern, so
+  it works even when the shell would have expanded it.
 - The analysed binary's dynamic loader is executed, as with `ldd`. Only run
   minimalizer on binaries you trust.
 - `--package` copies the binaries into the tree at the path they have in the
