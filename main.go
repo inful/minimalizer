@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -179,6 +180,12 @@ func expandBinaries(args []string) ([]string, error) {
 			out = append(out, arg)
 			continue
 		}
+		// A file whose name holds a glob character is still a file: if
+		// the argument names one, that is the file and not a pattern.
+		if fi, err := os.Stat(arg); err == nil && fi.Mode().IsRegular() {
+			out = append(out, arg)
+			continue
+		}
 		if strings.Contains(arg, "**") {
 			// The glob of the standard library matches one level of
 			// folders. A ** would match fewer folders than the user
@@ -193,7 +200,7 @@ func expandBinaries(args []string) ([]string, error) {
 		if len(matches) == 0 {
 			return nil, fmt.Errorf("no file matches %q", arg)
 		}
-		binaries := 0
+		found := make([]string, 0, len(matches))
 		for _, m := range matches {
 			fi, err := os.Stat(m)
 			if err != nil {
@@ -205,31 +212,20 @@ func expandBinaries(args []string) ([]string, error) {
 				continue
 			}
 			if !isELF(m) {
-				fmt.Fprintf(os.Stderr, "minimalizer: warning: %s is not a binary, it is skipped\n", m)
+				fmt.Fprintf(os.Stderr, "minimalizer: warning: %s is not a binary or cannot be read, it is skipped\n", m)
 				continue
 			}
 			out = append(out, m)
-			binaries++
+			found = append(found, m)
 		}
-		if binaries == 0 {
+		if len(found) == 0 {
 			return nil, fmt.Errorf("no binary matches %q", arg)
 		}
+		// The binaries a pattern matched are named, so a pattern that
+		// matches less than the user thinks is visible.
+		fmt.Fprintf(os.Stderr, "minimalizer: %s matches %d binaries: %s\n", arg, len(found), strings.Join(found, ", "))
 	}
-	return unique(out), nil
-}
-
-// unique removes the duplicates, keeping the order.
-func unique(list []string) []string {
-	seen := make(map[string]bool, len(list))
-	out := list[:0]
-	for _, s := range list {
-		if seen[s] {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
+	return slices.Compact(slices.Sorted(slices.Values(out))), nil
 }
 
 // isELF reports whether the file starts with the ELF magic.

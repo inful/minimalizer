@@ -28,10 +28,14 @@ func TestExpandBinaries(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// a symlink that points nowhere: it is not a binary
+	if err := os.Symlink(filepath.Join(dir, "gone"), filepath.Join(dir, "dead")); err != nil {
+		t.Fatal(err)
+	}
 
 	// A plain argument stays as it is, a pattern becomes the binaries it
-	// matches. A file that is not a binary and a folder are skipped, and
-	// the same binary is not analysed twice.
+	// matches. A file that is not a binary, a folder and a broken symlink
+	// are skipped, and the same binary is not analysed twice.
 	got, err := expandBinaries([]string{filepath.Join(dir, "app"), filepath.Join(dir, "*")})
 	if err != nil {
 		t.Fatalf("expandBinaries() error = %v", err)
@@ -39,6 +43,25 @@ func TestExpandBinaries(t *testing.T) {
 	want := []string{filepath.Join(dir, "app"), filepath.Join(dir, "worker")}
 	if !slices.Equal(got, want) {
 		t.Errorf("binaries = %v, want %v", got, want)
+	}
+}
+
+func TestExpandBinariesTakesAFileWhoseNameHoldsAGlobCharacter(t *testing.T) {
+	// The file is there, so it is that file and not a pattern: the glob
+	// would read the bracket as "the character 1".
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "lib[1]", "app")
+	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeELF(t, bin)
+
+	got, err := expandBinaries([]string{bin})
+	if err != nil {
+		t.Fatalf("expandBinaries() error = %v", err)
+	}
+	if !slices.Equal(got, []string{bin}) {
+		t.Errorf("binaries = %v, want %v", got, []string{bin})
 	}
 }
 
