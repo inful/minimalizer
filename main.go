@@ -162,6 +162,76 @@ func checkPackageForm(dir string, binaries []string) error {
 	return nil
 }
 
+// globChars are the characters that make an argument a pattern.
+const globChars = "*?["
+
+// expandBinaries turns the arguments into the list of binaries to analyse.
+// An argument with a glob character in it is a pattern: every binary it
+// matches is analysed. A file that is not a binary and a folder are skipped,
+// so a pattern can point at a folder of a distributor.
+//
+// A pattern that matches nothing is an error: a typo must not leave the
+// image without the binaries.
+func expandBinaries(args []string) ([]string, error) {
+	out := make([]string, 0, len(args))
+	for _, arg := range args {
+		if !strings.ContainsAny(arg, globChars) {
+			out = append(out, arg)
+			continue
+		}
+		if strings.Contains(arg, "**") {
+			// The glob of the standard library matches one level of
+			// folders. A ** would match fewer folders than the user
+			// thinks, and the missing binaries would only show up in the
+			// image.
+			return nil, fmt.Errorf("%q: ** is not supported, a pattern matches one level of folders", arg)
+		}
+		matches, err := filepath.Glob(arg)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a valid pattern: %w", arg, err)
+		}
+		if len(matches) == 0 {
+			return nil, fmt.Errorf("no file matches %q", arg)
+		}
+		binaries := 0
+		for _, m := range matches {
+			fi, err := os.Stat(m)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "minimalizer: warning: %s: %v, it is skipped\n", m, err)
+				continue
+			}
+			if !fi.Mode().IsRegular() {
+				// a folder or something else: not a binary
+				continue
+			}
+			if !isELF(m) {
+				fmt.Fprintf(os.Stderr, "minimalizer: warning: %s is not a binary, it is skipped\n", m)
+				continue
+			}
+			out = append(out, m)
+			binaries++
+		}
+		if binaries == 0 {
+			return nil, fmt.Errorf("no binary matches %q", arg)
+		}
+	}
+	return unique(out), nil
+}
+
+// unique removes the duplicates, keeping the order.
+func unique(list []string) []string {
+	seen := make(map[string]bool, len(list))
+	out := list[:0]
+	for _, s := range list {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
 // isELF reports whether the file starts with the ELF magic.
 func isELF(path string) bool {
 	f, err := os.Open(path)
@@ -178,9 +248,10 @@ func isELF(path string) bool {
 
 // usage prints how the tool is called.
 func usage(w io.Writer, fs *flag.FlagSet) {
-	_, _ = fmt.Fprintf(w, "usage: minimalizer [flags] <binary> [binary...]\n\n")
+	_, _ = fmt.Fprintf(w, "usage: minimalizer [flags] <binary|pattern> [binary|pattern...]\n\n")
 	fs.SetOutput(w)
 	fs.PrintDefaults()
+	_, _ = fmt.Fprintf(w, "\nAn argument with a * in it is a pattern: every binary it matches is analysed.\n")
 }
 
 func main() {
@@ -202,6 +273,13 @@ func main() {
 
 	if len(opts.binaries) == 0 {
 		usage(os.Stderr, opts.fs)
+		os.Exit(2)
+	}
+	// The arguments may be patterns: a distributor ships a folder of
+	// binaries and nobody wants to list them one by one.
+	opts.binaries, err = expandBinaries(opts.binaries)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "minimalizer:", err)
 		os.Exit(2)
 	}
 	if err := validate(opts); err != nil {

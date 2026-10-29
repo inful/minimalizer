@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -15,6 +16,73 @@ func writeELF(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestExpandBinaries(t *testing.T) {
+	dir := t.TempDir()
+	writeELF(t, filepath.Join(dir, "app"))
+	writeELF(t, filepath.Join(dir, "worker"))
+	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// A plain argument stays as it is, a pattern becomes the binaries it
+	// matches. A file that is not a binary and a folder are skipped, and
+	// the same binary is not analysed twice.
+	got, err := expandBinaries([]string{filepath.Join(dir, "app"), filepath.Join(dir, "*")})
+	if err != nil {
+		t.Fatalf("expandBinaries() error = %v", err)
+	}
+	want := []string{filepath.Join(dir, "app"), filepath.Join(dir, "worker")}
+	if !slices.Equal(got, want) {
+		t.Errorf("binaries = %v, want %v", got, want)
+	}
+}
+
+func TestExpandBinariesRefusesWhatItCannotUse(t *testing.T) {
+	dir := t.TempDir()
+	// a file that is not a binary
+	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		arg  string
+		want string
+	}{
+		{
+			name: "a pattern that matches nothing",
+			arg:  filepath.Join(dir, "nothing*"),
+			want: "no file matches",
+		},
+		{
+			name: "a pattern that matches no binary",
+			arg:  filepath.Join(dir, "README*"),
+			want: "no binary matches",
+		},
+		{
+			name: "a broken pattern",
+			arg:  filepath.Join(dir, "[app"),
+			want: "not a valid pattern",
+		},
+		{
+			name: "a double star",
+			arg:  filepath.Join(dir, "**", "app"),
+			want: "** is not supported",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := expandBinaries([]string{tc.arg}); err == nil {
+				t.Fatalf("expandBinaries() did not fail on %q", tc.arg)
+			} else if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("expandBinaries() error = %v, want it to mention %q", err, tc.want)
+			}
+		})
+	}
 }
 
 func TestParseArgs(t *testing.T) {

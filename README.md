@@ -106,7 +106,7 @@ analysed binary, because that is where the binaries and their libraries live.
 ## Usage
 
 ```
-minimalizer [flags] <binary> [binary...]
+minimalizer [flags] <binary|pattern> [binary|pattern...]
 
   -json
     	print JSON instead of Dockerfile statements
@@ -118,11 +118,29 @@ minimalizer [flags] <binary> [binary...]
     	name of the source stage used in COPY --from (default "builder")
   -version
     	print the version and exit
+
+An argument with a * in it is a pattern: every binary it matches is analysed.
 ```
 
 Several binaries can be given at once; the libraries are merged and
 deduplicated. A statically linked binary produces no statements - unless
 `--package` is used, which copies the binary itself into the tree.
+
+An argument with a `*`, `?` or `[` in it is a pattern, and every binary it
+matches is analysed. A file that is not a binary and a folder are skipped, so
+a pattern can point at the folder a distributor ships its binaries in:
+
+```
+$ minimalizer --package /app '/opt/vendor/bin/*'
+# (ELF interpreter) /lib64/ld-linux-x86-64.so.2 <- /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+# libc.so.6 /lib/x86_64-linux-gnu/libc.so.6 <- /usr/lib/x86_64-linux-gnu/libc.so.6
+# binary /opt/vendor/bin/app
+# binary /opt/vendor/bin/worker
+COPY --from=builder /rootfs/ /
+```
+
+A pattern that matches nothing is an error, so a typo cannot leave the image
+without the binaries.
 
 `--json` returns the same information in machine readable form:
 
@@ -290,6 +308,10 @@ because the kernel loads it by absolute path.
 - The stage name has to be a name Docker accepts for a stage (letters,
   digits, `_`, `.` and `-`). A name with a colon would be read by Docker as
   the name of an image, so it is refused.
+- A pattern is expanded by the tool. The shell expands it before the tool
+  sees it when it is not quoted, so quote a pattern that the tool should
+  expand. The glob of the standard library matches one level of folders:
+  `**` is refused, because it would match fewer binaries than it looks.
 - The analysed binary's dynamic loader is executed, as with `ldd`. Only run
   minimalizer on binaries you trust.
 - `--package` copies the binaries into the tree at the path they have in the
