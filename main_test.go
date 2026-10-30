@@ -255,6 +255,11 @@ func TestCheckPackageForm(t *testing.T) {
 	if err := checkPackageForm(defaultRootfs, []string{filepath.Join(dir, "new"), bin}); err == nil {
 		t.Error("checkPackageForm() did not catch a folder that does not exist yet")
 	}
+	// the old form in the other order: the binaries are sorted before they
+	// reach here, so the folder is not the first one.
+	if err := checkPackageForm(defaultRootfs, []string{bin, filepath.Join(dir, "new")}); err == nil {
+		t.Error("checkPackageForm() did not catch a folder that does not exist yet, with the binary first")
+	}
 	// the new form: one binary.
 	if err := checkPackageForm(defaultRootfs, []string{bin}); err != nil {
 		t.Errorf("checkPackageForm() error = %v, want none", err)

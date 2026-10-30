@@ -136,28 +136,33 @@ func validate(opts *options) error {
 }
 
 // checkPackageForm catches the old "--package FOLDER BINARY" form. The flag
-// takes no value now, so the folder ends up where the first binary should
-// be. The folder usually does not exist yet, because the tool is the one
-// that creates it, so it is recognised by the first argument not being a
-// binary while a later one is.
+// takes no value now, so the folder ends up where a binary should be. The
+// folder usually does not exist yet, because the tool is the one that creates
+// it, so it is recognised by an argument that does not exist while another
+// one is a binary.
+//
+// The arguments are sorted before they get here, so the folder is not
+// necessarily the first one.
 func checkPackageForm(dir string, binaries []string) error {
 	if len(binaries) < 2 {
 		return nil
 	}
-	first := binaries[0]
-	if fi, err := os.Stat(first); err == nil {
-		if fi.IsDir() {
-			return fmt.Errorf("%s is a folder. The tree goes to %s; write --package=DIR to name another folder", first, dir)
+	for _, b := range binaries {
+		fi, err := os.Stat(b)
+		if err == nil {
+			if fi.IsDir() {
+				return fmt.Errorf("%s is a folder. The tree goes to %s; write --package=DIR to name another folder", b, dir)
+			}
+			// The file is there. If it is not a binary, the error about
+			// the file itself is better than advice about the flag.
+			continue
 		}
-		// The file is there. If it is not a binary, the error about the
-		// file itself is better than advice about the flag.
-		return nil
-	}
-	// The first argument does not exist. That is what the old form looks
-	// like: the folder is the one the tool is going to create.
-	for _, b := range binaries[1:] {
-		if isELF(b) {
-			return fmt.Errorf("%s does not exist. The tree goes to %s; write --package=DIR to name another folder", first, dir)
+		// The argument does not exist. That is what the old form looks
+		// like: the folder is the one the tool is going to create.
+		for _, other := range binaries {
+			if other != b && isELF(other) {
+				return fmt.Errorf("%s does not exist. The tree goes to %s; write --package=DIR to name another folder", b, dir)
+			}
 		}
 	}
 	return nil
