@@ -79,9 +79,12 @@ COPY --from=ghcr.io/inful/minimalizer:latest /minimalizer /usr/local/bin/minimal
 It holds a static binary, so it runs in any stage, whatever libc that stage
 has. Every release publishes it for amd64, arm64 and armv7 in one multi-arch
 tag, so the same line works on every machine. The image carries the tag of
-the version, the tag of the series (`v0.2`) and `latest`. The last two move
-when a release is published, so no tag points at a version that has no
+the version, the tag of the series it belongs to, and `latest`. The last two
+move when a release is published, so no tag points at a version that has no
 release page yet.
+
+To build the image yourself instead of pulling it: `docker build -t
+minimalizer-tool .` — the repository ships the Dockerfile for it.
 
 Or from a release archive (linux, on amd64, arm64 or armv7 - every release has
 a `checksums.txt` next to the archives):
@@ -118,6 +121,9 @@ minimalizer [flags] <binary|pattern> [binary|pattern...]
 
 An argument with a * in it is a pattern: every binary it matches is analysed.
 ```
+
+It exits 2 when the command is wrong, and 1 when the run failed — a library
+the loader cannot resolve, for example.
 
 `--package` writes the files into a tree, laid out as they have to be in the
 final image, and prints the statement that moves the tree there. Everything
