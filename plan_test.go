@@ -135,6 +135,28 @@ func TestCheckCommentPath(t *testing.T) {
 	}
 }
 
+func TestPackageLibsRefusesAResolvedFolderThatBreaksTheLine(t *testing.T) {
+	// The statement the tool prints carries the resolved folder, so a
+	// symlink to a folder with a space in its name would put the space
+	// into the line.
+	dir := t.TempDir()
+	folder := filepath.Join(dir, "my tree")
+	if err := os.Mkdir(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(folder, link); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "app")
+	if err := os.WriteFile(bin, []byte("elf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := packageLibs(nil, []string{bin}, link); err == nil {
+		t.Error("packageLibs() did not fail on a resolved folder with a space in its name")
+	}
+}
+
 func TestPackageLibsResolvesTheFolder(t *testing.T) {
 	// The marker lives next to the folder, so a symlinked folder would put
 	// it next to the link. The tool would not recognise its own tree then.

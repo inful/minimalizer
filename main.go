@@ -124,8 +124,8 @@ func validate(opts *options) error {
 		if err != nil {
 			return fmt.Errorf("cannot resolve %s: %w", opts.packageDir, err)
 		}
-		if strings.ContainsAny(abs, badPathChars) {
-			return fmt.Errorf("the package folder %q cannot be used in a Dockerfile line", abs)
+		if err := checkFolderPath(abs); err != nil {
+			return err
 		}
 		opts.packageDir = abs
 		if err := checkPackageForm(opts.packageDir, opts.binaries); err != nil {

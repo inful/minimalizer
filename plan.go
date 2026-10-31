@@ -286,6 +286,15 @@ func checkCopyPath(path string) error {
 	return nil
 }
 
+// checkFolderPath refuses a folder that cannot be written in a Dockerfile
+// line: the statement that moves the tree there carries the path.
+func checkFolderPath(path string) error {
+	if strings.ContainsAny(path, badPathChars) {
+		return fmt.Errorf("the package folder %q cannot be used in a Dockerfile line", path)
+	}
+	return nil
+}
+
 // checkCommentPath refuses a path that cannot be written in a comment.
 func checkCommentPath(path string) error {
 	if strings.ContainsAny(path, badCommentChars) {
@@ -365,6 +374,12 @@ func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
 	// tree then.
 	if resolved, err := filepath.EvalSymlinks(treeAbs); err == nil {
 		treeAbs = resolved
+	}
+	// The statement the tool prints carries this path, so it has to be
+	// printable in a Dockerfile line. The path the user gave is checked
+	// before anything is written; this one is what ends up in the line.
+	if err := checkFolderPath(treeAbs); err != nil {
+		return "", err
 	}
 	if len(libs) == 0 && len(binaries) == 0 {
 		// Nothing to copy, so there is no folder to make.

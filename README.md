@@ -134,7 +134,8 @@ no builder has to follow one.
 The flag takes no value: the arguments are the binaries, and the tree goes to
 `/rootfs`, which needs write access to `/`. Write `--package=DIR` to name
 another folder - `--package DIR` would read `DIR` as a binary, and the tool
-says so.
+says so. The folder is resolved, so a symlink to it shows the real path in
+the statement.
 
 To be sure it never touches something you care about, the tool only writes
 into a folder that it made itself - it leaves a `<folder>.minimalizer` file
