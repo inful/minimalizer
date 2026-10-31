@@ -120,6 +120,7 @@ minimalizer [flags] <binary|pattern> [binary|pattern...]
     	print the version and exit
 
 An argument with a * in it is a pattern: every binary it matches is analysed.
+An argument with a ? or a [ in it is a pattern too.
 ```
 
 It exits 2 when the command is wrong, and 1 when the run failed — a library
@@ -205,6 +206,10 @@ expects. Everything is deduplicated by destination path.
   be copied by hand.
 - A library the loader cannot resolve is an error, not a warning: the image
   would fail at runtime. Install the library in the builder stage first.
+- A binary that asks for no library still needs its interpreter in the image
+  when it names one: a static PIE (`go build -buildmode=pie`) asks for no
+  library, but the kernel loads the interpreter by its absolute path. The
+  tool copies it.
 - The `LD_*` variables of the build stage are ignored while the loader runs,
   so the answer does not depend on the environment of the build stage.
 - Without `/etc/ld.so.cache` the loader falls back to its built-in search
@@ -216,8 +221,10 @@ expects. Everything is deduplicated by destination path.
   path of the binary covers the libraries it asks for itself; only `DT_RPATH`
   is passed on to the libraries of a library, a `DT_RUNPATH` is not.
 - A path that cannot be written in a Dockerfile line - one with a space, a
-  quote, a newline or a `[` in it - is refused where it goes into a `COPY`
-  line, because Docker would read the line differently.
+  quote, a newline or a glob character (`*`, `?`, `[`) in it - is refused
+  where it goes into a `COPY` line, because Docker would read the line
+  differently. A glob character in a path is a glob for the source of a
+  `COPY`, so it would bring in a different file, or none at all.
 - The stage name has to be a name Docker accepts for a stage: it starts with
   a letter or a digit, and holds letters, digits, `_`, `.` and `-`.
 - The analysed binary's dynamic loader is executed, as with `ldd`. Only run

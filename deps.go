@@ -23,9 +23,15 @@ func lddDeps(bin string, info elfInfo) ([]dep, error) {
 		return nil, fmt.Errorf("minimalizer only runs on Linux")
 	}
 	if len(info.needed) == 0 {
-		// The binary asks for nothing, so it is static and has no
-		// libraries. There is no need to start the loader.
-		return nil, nil
+		if info.interp == "" {
+			// The binary asks for nothing and names no interpreter, so
+			// it is static and the image needs nothing for it.
+			return nil, nil
+		}
+		// A static PIE asks for no library but names an interpreter: the
+		// kernel loads that file by absolute path, so the image needs
+		// it even though there is nothing to list.
+		return []dep{{path: info.interp}}, nil
 	}
 	interp := info.interp
 	if interp == "" {

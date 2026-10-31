@@ -21,10 +21,10 @@ const (
 
 // badPathChars would break the Dockerfile lines we print.
 //
-// The bracket is in there because the source of a COPY is a glob: a path
-// with a "[" in it matches a different file, or none at all, and the build
-// says nothing about it.
-const badPathChars = " \t\n#\"'$["
+// The glob characters are in there because the source of a COPY is a glob: a
+// path with a "*", a "?" or a "[" in it matches a different file, or none at
+// all, and the build says nothing about it.
+const badPathChars = " \t\n#\"'$[*?"
 
 // badCommentChars would break out of a comment line we print.
 const badCommentChars = "\r\n"
@@ -235,10 +235,16 @@ func searchPathsFor(bin string, info elfInfo) searchPaths {
 // expandOrigin replaces $ORIGIN in the search paths of a binary with the
 // folder the binary is in: that is what the loader looks in, not a folder
 // called "$ORIGIN".
+//
+// The loader takes ${ORIGIN} as well, so both forms are replaced. The braced
+// one goes first: replacing "$ORIGIN" in "${ORIGIN}" would leave the braces
+// behind.
 func expandOrigin(dirs []string, dir string) []string {
 	out := make([]string, 0, len(dirs))
 	for _, d := range dirs {
-		out = append(out, strings.ReplaceAll(d, "$ORIGIN", dir))
+		d = strings.ReplaceAll(d, "${ORIGIN}", dir)
+		d = strings.ReplaceAll(d, "$ORIGIN", dir)
+		out = append(out, d)
 	}
 	return out
 }
@@ -374,6 +380,12 @@ func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
 	// tree then.
 	if resolved, err := filepath.EvalSymlinks(treeAbs); err == nil {
 		treeAbs = resolved
+	} else if fi, lerr := os.Lstat(treeAbs); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+		// A link that points nowhere: the folder it names is not there,
+		// and making it would fail with "file exists".
+		if _, serr := os.Stat(treeAbs); errors.Is(serr, os.ErrNotExist) {
+			return "", fmt.Errorf("the package folder %s points to a folder that does not exist", treeAbs)
+		}
 	}
 	// The statement the tool prints carries this path, so it has to be
 	// printable in a Dockerfile line. The path the user gave is checked

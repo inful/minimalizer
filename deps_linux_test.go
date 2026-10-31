@@ -5,6 +5,7 @@ package main
 import (
 	"debug/elf"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -184,4 +185,53 @@ func TestCollect(t *testing.T) {
 	if !found {
 		t.Errorf("collect() with the cache = %v, want the cache in the list", libs)
 	}
+}
+
+func TestLddDepsOnAStaticPIE(t *testing.T) {
+	// A static PIE asks for no library, but it names an interpreter: the
+	// kernel loads that file by absolute path, so the image needs it.
+	bin := buildStaticPIE(t)
+	info, err := readELF(bin)
+	if err != nil {
+		t.Fatalf("readELF() error = %v", err)
+	}
+	if len(info.needed) != 0 {
+		t.Skipf("the binary built here is not static: it asks for %v", info.needed)
+	}
+	if info.interp == "" {
+		t.Skip("the binary built here names no interpreter")
+	}
+
+	deps, err := lddDeps(bin, info)
+	if err != nil {
+		t.Fatalf("lddDeps() error = %v", err)
+	}
+	found := false
+	for _, d := range deps {
+		if d.path == info.interp {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("lddDeps() = %v, want the interpreter %q among them", deps, info.interp)
+	}
+}
+
+// buildStaticPIE builds a program that is a PIE but asks for no library.
+func buildStaticPIE(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(src, []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "staticpie")
+	// CGO off, so the binary asks for no library. A PIE, so it still names
+	// an interpreter.
+	cmd := exec.Command("go", "build", "-buildmode=pie", "-o", bin, src)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("cannot build a static PIE: %v\n%s", err, out)
+	}
+	return bin
 }

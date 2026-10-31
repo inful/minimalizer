@@ -59,7 +59,7 @@ func TestResolveMarksInterpreter(t *testing.T) {
 }
 
 func TestWriteDockerfileRejectsPathsThatBreakIt(t *testing.T) {
-	for _, path := range []string{"/lib/with space.so", "/lib/with#hash.so", "/lib/with$dollar.so", "/lib/with\"quote.so", "/lib/with[bracket.so"} {
+	for _, path := range []string{"/lib/with space.so", "/lib/with#hash.so", "/lib/with$dollar.so", "/lib/with\"quote.so", "/lib/with[bracket.so", "/lib/with*star.so", "/lib/with?question.so"} {
 		libs := []lib{{kind: kindLib, soname: "libfoo.so", dest: path, src: path}}
 		var sb strings.Builder
 		if err := writeDockerfile(&sb, libs, "builder"); err == nil {
@@ -154,6 +154,27 @@ func TestPackageLibsRefusesAResolvedFolderThatBreaksTheLine(t *testing.T) {
 	}
 	if _, err := packageLibs(nil, []string{bin}, link); err == nil {
 		t.Error("packageLibs() did not fail on a resolved folder with a space in its name")
+	}
+}
+
+func TestPackageLibsRefusesALinkThatPointsNowhere(t *testing.T) {
+	// A link to a folder that does not exist: the folder is not there, so
+	// the run fails. The message has to say that, not "file exists".
+	dir := t.TempDir()
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(filepath.Join(dir, "gone"), link); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "app")
+	if err := os.WriteFile(bin, []byte("elf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := packageLibs(nil, []string{bin}, link)
+	if err == nil {
+		t.Fatal("packageLibs() did not fail on a link that points nowhere")
+	}
+	if !strings.Contains(err.Error(), "points to") {
+		t.Errorf("error = %q, want it to say the link points nowhere", err)
 	}
 }
 
@@ -268,6 +289,22 @@ func TestSearchPathsForExpandsOrigin(t *testing.T) {
 	// A library next to the binary is found through it, so the image does
 	// not need the loader cache for it.
 	l := lib{kind: kindLib, soname: "libfoo.so", dest: "/app/libfoo.so"}
+	if needsCache(l, paths) {
+		t.Error("needsCache() = true, want false: the runpath covers the library")
+	}
+}
+
+func TestSearchPathsForExpandsTheBracedOrigin(t *testing.T) {
+	// The loader takes ${ORIGIN} as well as $ORIGIN.
+	paths := searchPathsFor("/app/app", elfInfo{needed: []string{"libfoo.so"}, runpath: []string{"${ORIGIN}", "${ORIGIN}/lib"}})
+	want := []string{"/app", "/app/lib"}
+	if !slices.Equal(paths.runpath, want) {
+		t.Errorf("runpath = %v, want %v", paths.runpath, want)
+	}
+
+	// The library is found through the runpath, so the image does not need
+	// the loader cache for it.
+	l := lib{kind: kindLib, soname: "libfoo.so", dest: "/app/lib/libfoo.so"}
 	if needsCache(l, paths) {
 		t.Error("needsCache() = true, want false: the runpath covers the library")
 	}

@@ -258,7 +258,7 @@ func usage(w io.Writer, fs *flag.FlagSet) {
 	_, _ = fmt.Fprintf(w, "usage: minimalizer [flags] <binary|pattern> [binary|pattern...]\n\n")
 	fs.SetOutput(w)
 	fs.PrintDefaults()
-	_, _ = fmt.Fprintf(w, "\nAn argument with a * in it is a pattern: every binary it matches is analysed.\n")
+	_, _ = fmt.Fprintf(w, "\nAn argument with a * in it is a pattern: every binary it matches is analysed.\nAn argument with a ? or a [ in it is a pattern too.\n")
 }
 
 func main() {
