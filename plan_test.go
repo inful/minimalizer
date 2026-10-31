@@ -581,8 +581,9 @@ func TestPackageLibsRemovesLeftoverTempFilesInEveryFolder(t *testing.T) {
 }
 
 func TestPackageLibsWritesNoSymlink(t *testing.T) {
-	// kaniko does not copy symlinks, so the tree must not hold one: it is
-	// copied with a single statement.
+	// The tree must not hold a symlink: a builder that copies the link
+	// instead of the file leaves the loader with nothing to open, and the
+	// tree is copied with a single statement.
 	dir := t.TempDir()
 	target := filepath.Join(dir, "libc.so.6.1")
 	if err := os.WriteFile(target, []byte("elf"), 0o755); err != nil {

@@ -1,9 +1,9 @@
 // Command minimalizer reports the shared libraries a binary depends on and
 // prints COPY --from statements that bring them into a scratch based image.
 //
-// The statements are safe for kaniko: every library is resolved to the real
-// file behind its symlinks and copied to the path the dynamic loader expects,
-// so the resulting image needs no symlinks at all.
+// Every library is resolved to the real file behind its symlinks and copied
+// to the path the dynamic loader expects, so the image holds regular files at
+// the paths the loader looks for. No builder has to follow a symlink.
 package main
 
 import (

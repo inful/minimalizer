@@ -7,6 +7,11 @@
 Lists the shared libraries a binary depends on and prints the `COPY --from`
 statements that bring them into a `FROM scratch` image.
 
+Every library is resolved to the real file behind its symlinks and copied to
+the path the dynamic loader looks for, so the image holds regular files where
+the loader wants them. A plain `COPY` of that path copies the symlink instead
+of the file, and the image starts without the library.
+
 ## The use case
 
 You build an app in a builder stage and want it in a scratch image, together
@@ -116,8 +121,8 @@ An argument with a * in it is a pattern: every binary it matches is analysed.
 `--package` writes the files into a tree, laid out as they have to be in the
 final image, and prints the statement that moves the tree there. Everything
 keeps the path it has in the builder, so two binaries with the same name in
-different folders do not overwrite each other. The tree holds no symlinks,
-which is what kaniko needs.
+different folders do not overwrite each other. The tree holds no symlinks, so
+no builder has to follow one.
 
 The flag takes no value: the arguments are the binaries, and the tree goes to
 `/rootfs`, which needs write access to `/`. Write `--package=DIR` to name

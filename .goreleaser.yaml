@@ -131,9 +131,9 @@ release:
   header: |
     `minimalizer` lists the shared libraries a Linux binary needs and prints
     the `COPY --from` statements that bring them into a `FROM scratch` image.
-    The statements are safe for kaniko: every library is resolved to the real
-    file behind its symlinks and copied to the path the dynamic loader
-    expects, so the image needs no symlinks at all.
+    Every library is resolved to the real file behind its symlinks and copied
+    to the path the dynamic loader expects, so the image holds regular files
+    at the paths the loader looks for. No builder has to follow a symlink.
 
     The archives hold the binary for linux on amd64, arm64 and armv7, and the
     same binary is published as the multi-arch image

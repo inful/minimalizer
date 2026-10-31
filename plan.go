@@ -163,7 +163,8 @@ func merge(byDest map[string]lib, deps []dep, bin string) error {
 
 // resolve turns an ldd entry into a copy instruction: the destination is the
 // path the dynamic loader looks for, the source is the real file behind any
-// symlink, because kaniko does not copy symlinks.
+// symlink. The image has to hold regular files: a builder that copies the
+// link instead of the file leaves the loader with nothing to open.
 //
 // The paths are not checked here: whether they can be written in a Dockerfile
 // line depends on the mode the tool runs in.
