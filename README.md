@@ -44,6 +44,24 @@ That is what keeps the dependencies of a new upstream release from reaching
 you - a runtime image like `FROM debian` brings its own libraries, and a new
 release of it can break an app that worked yesterday.
 
+## Where this fits
+
+[distroless](https://github.com/GoogleContainerTools/distroless) gives you a
+base image: a fixed set of libraries and no shell. That is the right base for
+an image that only runs your app.
+
+`minimalizer` covers what a base image cannot: the exact libraries your own
+binaries need, and the system tools you want next to them. The two go
+together - a distroless base for the app, minimalizer for what you add to it.
+(The libraries it resolves come from the stage it runs in, so a tool you copy
+has to come from a distribution as new as the base image you build on.)
+
+| You want | Use |
+|---|---|
+| just your app | `FROM distroless/static`, or `FROM scratch` |
+| your app and `bash`, `ssh`, `curl` | `minimalizer` |
+| the exact libraries of your own build | `minimalizer` |
+
 ## Install
 
 The image is the usual way to get the tool:
