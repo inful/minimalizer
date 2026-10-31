@@ -3,7 +3,7 @@
 # The tool asks a binary's ELF interpreter for its libraries, so it only
 # works on Linux. Only Linux binaries are shipped: a macOS or Windows build
 # would install a binary that answers "minimalizer only runs on Linux".
-# The CI matrix still compiles every platform, so a break that only happens
+# The CI matrix builds the same Linux platforms, so a break that only happens
 # on one of them shows up before the tag.
 #
 # Draft by default so the maintainer can read the notes before publishing.

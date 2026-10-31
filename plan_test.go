@@ -101,6 +101,19 @@ func TestWritePackageAcceptsAPathWithASpace(t *testing.T) {
 	}
 }
 
+func TestWritePackageRefusesABinaryPathThatBreaksTheComment(t *testing.T) {
+	// A newline in the path would end the comment, and the rest of the
+	// path would be read as a Dockerfile instruction.
+	libs := []lib{{kind: kindLib, soname: "libfoo.so", dest: "/lib/libfoo.so", src: "/lib/libfoo.so"}}
+	var sb strings.Builder
+	if err := writePackage(&sb, libs, []string{"/out/app\nRUN evil"}, "/out/rootfs", "builder"); err == nil {
+		t.Error("writePackage() did not fail on a binary path with a newline")
+	}
+	if strings.Contains(sb.String(), "RUN evil") {
+		t.Errorf("output = %q, want the path not to be printed", sb.String())
+	}
+}
+
 func TestWriteJSONRejectsPathsThatBreakTheCopyLine(t *testing.T) {
 	for _, path := range []string{"/opt/my libs/libfoo.so", "/opt/lib[1]/libfoo.so"} {
 		libs := []lib{{kind: kindLib, soname: "libfoo.so", dest: path, src: path}}

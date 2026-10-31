@@ -151,7 +151,7 @@ func checkPackageForm(dir string, binaries []string) error {
 		fi, err := os.Stat(b)
 		if err == nil {
 			if fi.IsDir() {
-				return fmt.Errorf("%s is a folder. The tree goes to %s; write --package=DIR to name another folder", b, dir)
+				return fmt.Errorf("%s is a folder. The tree goes to %s; write --package=DIR to name another folder, or name the binaries in it with a pattern", b, dir)
 			}
 			// The file is there. If it is not a binary, the error about
 			// the file itself is better than advice about the flag.
@@ -163,7 +163,7 @@ func checkPackageForm(dir string, binaries []string) error {
 		// message names both.
 		for _, other := range binaries {
 			if other != b && isELF(other) {
-				return fmt.Errorf("%s does not exist. The tree goes to %s; if it is the folder of the tree, write --package=DIR to name another folder, and if it is a binary, it has to be there", b, dir)
+				return fmt.Errorf("%s does not exist. The tree goes to %s; if it is the folder of the tree, write --package=DIR to name another folder, and if it is a binary, it has to be there. The binaries can also be named with a pattern", b, dir)
 			}
 		}
 	}
