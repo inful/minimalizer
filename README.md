@@ -217,6 +217,9 @@ expects. Everything is deduplicated by destination path.
   sees it when it is not quoted, so quote a pattern that the tool should
   expand. The glob of the standard library matches one level of folders:
   `**` is refused, because it would match fewer binaries than it looks.
+- The statements work with every builder - BuildKit, podman, buildah and
+  kaniko. kaniko is archived and no longer developed, but it is still in use,
+  and it is where this problem came from.
 
 ## Working on the tool
 
