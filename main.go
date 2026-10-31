@@ -124,8 +124,8 @@ func validate(opts *options) error {
 		if err != nil {
 			return fmt.Errorf("cannot resolve %s: %w", opts.packageDir, err)
 		}
-		if err := checkWord("package folder", abs); err != nil {
-			return err
+		if strings.ContainsAny(abs, badPathChars) {
+			return fmt.Errorf("the package folder %q cannot be used in a Dockerfile line", abs)
 		}
 		opts.packageDir = abs
 		if err := checkPackageForm(opts.packageDir, opts.binaries); err != nil {
@@ -158,10 +158,12 @@ func checkPackageForm(dir string, binaries []string) error {
 			continue
 		}
 		// The argument does not exist. That is what the old form looks
-		// like: the folder is the one the tool is going to create.
+		// like: the folder is the one the tool is going to create. It is
+		// also what a binary that is not built yet looks like, so the
+		// message names both.
 		for _, other := range binaries {
 			if other != b && isELF(other) {
-				return fmt.Errorf("%s does not exist. The tree goes to %s; write --package=DIR to name another folder", b, dir)
+				return fmt.Errorf("%s does not exist. The tree goes to %s; if it is the folder of the tree, write --package=DIR to name another folder, and if it is a binary, it has to be there", b, dir)
 			}
 		}
 	}
@@ -227,8 +229,12 @@ func expandBinaries(args []string) ([]string, error) {
 			return nil, fmt.Errorf("no binary matches %q", arg)
 		}
 		// The binaries a pattern matched are named, so a pattern that
-		// matches less than the user thinks is visible.
-		fmt.Fprintf(os.Stderr, "minimalizer: %s matches %d binaries: %s\n", arg, len(found), strings.Join(found, ", "))
+		// matches less than the user thinks is visible. One path per
+		// line: a pattern can match a lot of them.
+		fmt.Fprintf(os.Stderr, "minimalizer: %s matches %d binaries\n", arg, len(found))
+		for _, f := range found {
+			fmt.Fprintf(os.Stderr, "minimalizer:   %s\n", f)
+		}
 	}
 	return slices.Compact(slices.Sorted(slices.Values(out))), nil
 }

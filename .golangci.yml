@@ -16,6 +16,8 @@ linters:
     - revive         # successor to golint
     - usestdlibvars  # prefer stdlib consts/var over redeclaring
   disable:
+    # None of these is in the standard set. They are listed so that a
+    # switch to "all" does not turn them on by accident.
     - cyclop         # cyclomatic complexity (gocognit overlaps)
     - dupl           # duplicate code (over-eager on tests)
     - exhaustruct    # constructor struct literal exhaustion

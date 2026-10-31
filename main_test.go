@@ -252,8 +252,14 @@ func TestCheckPackageForm(t *testing.T) {
 		t.Error("checkPackageForm() did not catch an existing folder")
 	}
 	// the old form: the folder does not exist yet, the tool would create it.
-	if err := checkPackageForm(defaultRootfs, []string{filepath.Join(dir, "new"), bin}); err == nil {
-		t.Error("checkPackageForm() did not catch a folder that does not exist yet")
+	// The message has to name both cases: the folder of the tree, and a
+	// binary that is not there.
+	err := checkPackageForm(defaultRootfs, []string{filepath.Join(dir, "new"), bin})
+	if err == nil {
+		t.Fatal("checkPackageForm() did not catch a folder that does not exist yet")
+	}
+	if !strings.Contains(err.Error(), "if it is a binary, it has to be there") {
+		t.Errorf("checkPackageForm() error = %v, want it to mention a missing binary", err)
 	}
 	// the old form in the other order: the binaries are sorted before they
 	// reach here, so the folder is not the first one.

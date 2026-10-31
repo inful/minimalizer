@@ -630,20 +630,6 @@ func TestCopyFileOntoItself(t *testing.T) {
 	}
 }
 
-func TestCheckWord(t *testing.T) {
-	if err := checkWord("stage name", "builder"); err != nil {
-		t.Errorf("checkWord() error = %v", err)
-	}
-	if err := checkWord("stage name", ""); err != nil {
-		t.Errorf("checkWord() error = %v", err)
-	}
-	for _, word := range []string{"my builder", "a#b", "a$b", "a\"b", "--json"} {
-		if err := checkWord("stage name", word); err == nil {
-			t.Errorf("checkWord(%q) did not fail", word)
-		}
-	}
-}
-
 func TestWriteDockerfile(t *testing.T) {
 	libs := []lib{{kind: kindLib, soname: "libc.so.6", dest: "/lib/libc.so.6", src: "/usr/lib/libc-2.36.so"}}
 	var sb strings.Builder

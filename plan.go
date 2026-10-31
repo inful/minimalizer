@@ -278,21 +278,6 @@ func underAny(path string, dirs []string) bool {
 	return false
 }
 
-// checkWord makes sure a word we write into a Dockerfile line cannot break
-// that line, and that it is not another flag in disguise.
-func checkWord(what, value string) error {
-	if value == "" {
-		return nil
-	}
-	if strings.HasPrefix(value, "-") {
-		return fmt.Errorf("the %s %q starts with a dash, write it as --flag=value", what, value)
-	}
-	if strings.ContainsAny(value, badPathChars) {
-		return fmt.Errorf("the %s %q cannot be used in a Dockerfile line", what, value)
-	}
-	return nil
-}
-
 // checkCopyPath refuses a path that cannot be written in a COPY line.
 func checkCopyPath(path string) error {
 	if strings.ContainsAny(path, badPathChars) {

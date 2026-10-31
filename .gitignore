@@ -9,9 +9,6 @@ coverage.*
 
 # Throwaway probe files (from sed -i.bak, throwaway scripts, etc.)
 *.bak
-*.bak2
-*.bak3
-*.bak4
 
 # IDE / editor
 .idea/

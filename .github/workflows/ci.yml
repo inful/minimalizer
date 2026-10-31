@@ -164,12 +164,14 @@ jobs:
           cd /tmp/e2e
           # The default tree, the one the README shows. The runner user
           # cannot write to /, so the statement is made as root.
-          sudo ./minimalizer --package=/rootfs /bin/ls | grep '^COPY' > copy.txt
+          # The binaries come from a pattern: that is how a distributor
+          # ships them, and the image below is built from it.
+          sudo ./minimalizer --package=/rootfs '/bin/ls*' | grep '^COPY' > copy.txt
           cat copy.txt
           {
             echo "FROM debian:bookworm-slim AS builder"
             echo "COPY minimalizer /usr/local/bin/minimalizer"
-            echo "RUN minimalizer --package=/rootfs /bin/ls"
+            echo "RUN minimalizer --package=/rootfs '/bin/ls*'"
             echo "FROM scratch"
             cat copy.txt
             echo 'ENTRYPOINT ["/bin/ls"]'
