@@ -9,8 +9,9 @@ statements that bring them into a `FROM scratch` image.
 
 Every library is resolved to the real file behind its symlinks and copied to
 the path the dynamic loader looks for, so the image holds regular files where
-the loader wants them. A plain `COPY` of that path copies the symlink instead
-of the file, and the image starts without the library.
+the loader wants them. Copying that path yourself does not work: it runs
+through symlinks, and the builder either copies the link instead of the file,
+or does not find it at all.
 
 ## The use case
 
@@ -78,7 +79,7 @@ COPY --from=ghcr.io/inful/minimalizer:latest /minimalizer /usr/local/bin/minimal
 It holds a static binary, so it runs in any stage, whatever libc that stage
 has. Every release publishes it for amd64, arm64 and armv7 in one multi-arch
 tag, so the same line works on every machine. The image carries the tag of
-the version, the tag of the series (`v0.1`) and `latest`. The last two move
+the version, the tag of the series (`v0.2`) and `latest`. The last two move
 when a release is published, so no tag points at a version that has no
 release page yet.
 
@@ -200,17 +201,18 @@ expects. Everything is deduplicated by destination path.
 - The `LD_*` variables of the build stage are ignored while the loader runs,
   so the answer does not depend on the environment of the build stage.
 - Without `/etc/ld.so.cache` the loader falls back to its built-in search
-  path. Libraries outside `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64` and
-  `/usr/local/lib` (for example in `/opt`) are only found again if the cache
-  is copied too, so use `--ld-cache` in that case. The tool prints a warning
+  path. Libraries outside `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64`,
+  `/usr/local/lib` and `/usr/local/lib64` (for example in `/opt`) are only
+  found again if the cache is copied too, so use `--ld-cache` in that case.
+  The tool prints a warning
   for every library that the loader can only find through its cache. A search
   path of the binary covers the libraries it asks for itself; only `DT_RPATH`
   is passed on to the libraries of a library, a `DT_RUNPATH` is not.
 - A path that cannot be written in a Dockerfile line - one with a space, a
-  quote, a newline or a `[` in it - is refused in the modes that print a
-  `COPY` line per library, because Docker would read the line differently.
-- The stage name has to be a name Docker accepts for a stage (letters,
-  digits, `_`, `.` and `-`).
+  quote, a newline or a `[` in it - is refused where it goes into a `COPY`
+  line, because Docker would read the line differently.
+- The stage name has to be a name Docker accepts for a stage: it starts with
+  a letter or a digit, and holds letters, digits, `_`, `.` and `-`.
 - The analysed binary's dynamic loader is executed, as with `ldd`. Only run
   minimalizer on binaries you trust.
 - A pattern is expanded by the tool. The shell expands it before the tool
@@ -223,8 +225,10 @@ expects. Everything is deduplicated by destination path.
 
 ## Working on the tool
 
-The checks that run before every commit are the ones the CI runs:
-`golangci-lint` and `go test -race`. They are set up with
+Before every commit, the shared lefthook configuration runs `gofmt`, `go vet`,
+`golangci-lint`, `go test -race` and `govulncheck`, and for the other files
+`markdownlint`, `typos`, `gitleaks` and `shellcheck`. The CI runs vet, lint
+and the tests on every push. The hooks are set up with
 [lefthook](https://lefthook.dev):
 
 ```bash
