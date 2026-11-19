@@ -42,6 +42,10 @@ func lddDeps(bin string, info elfInfo) ([]dep, error) {
 		if err != nil {
 			return nil, err
 		}
+	} else if host := stageMachine(); host != elf.EM_NONE && info.machine != host {
+		// The binary names the interpreter of another machine: this
+		// stage has no loader that can list its libraries.
+		return nil, fmt.Errorf("%s is built for %s, this stage is %s", bin, info.machine, host)
 	}
 
 	// The loader treats a name without a slash as the name of a library, so

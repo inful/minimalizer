@@ -83,6 +83,9 @@ the version, the tag of the series it belongs to, and `latest`. The last two
 move when a release is published, so no tag points at a version that has no
 release page yet.
 
+Pin the tag of the version when the image has to be the same tomorrow:
+`ghcr.io/inful/minimalizer:0.1.0` names one release and does not move.
+
 To build the image yourself instead of pulling it: `docker build -t
 minimalizer-tool .` — the repository ships the Dockerfile for it.
 
@@ -147,7 +150,10 @@ the folder. A file of your own with that name is never overwritten: the tool
 refuses the run instead.
 
 The tree is added to, not replaced, so the tool can be run more than once to
-package several binaries into the same folder.
+package several binaries into the same folder. It is never emptied: the
+folder keeps everything that was ever packaged into it, and the statement
+copies the whole tree. Use a fresh folder for every image you build, or the
+image holds the files of the runs before it as well.
 
 An argument with a `*`, `?` or `[` in it is a pattern, and every binary it
 matches is analysed - handy for the folder of binaries a distributor ships.
@@ -155,6 +161,11 @@ The binaries a pattern matched are named on stderr, so a pattern that matches
 less than you think is visible. A pattern that matches nothing, or nothing
 but files that are not binaries, is an error, so a typo cannot leave the image
 without the binaries.
+
+A file the tool cannot read as a binary - a script, a text file, a truncated
+download - is skipped with a warning, so one bad file in a folder does not
+break the build. A binary built for another machine is skipped as well: the
+loader of this stage cannot list its libraries.
 
 Without `--package` the tool prints one `COPY --from` per library instead,
 which is more explicit and lets you pick the stage name:

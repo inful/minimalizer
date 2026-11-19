@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 )
 
@@ -107,14 +106,14 @@ func collect(binaries []string, withCache bool) ([]lib, error) {
 			libs = append(libs, *c)
 		}
 	}
-	sort.Slice(libs, func(i, j int) bool {
-		if rank(libs[i]) != rank(libs[j]) {
-			return rank(libs[i]) < rank(libs[j])
+	slices.SortFunc(libs, func(a, b lib) int {
+		if rank(a) != rank(b) {
+			return rank(a) - rank(b)
 		}
-		return libs[i].dest < libs[j].dest
+		return strings.Compare(a.dest, b.dest)
 	})
 
-	warnNeedsCache(libs, paths)
+	warnNeedsCache(libs, paths, withCache)
 	return libs, nil
 }
 
@@ -122,7 +121,13 @@ func collect(binaries []string, withCache bool) ([]lib, error) {
 // through its cache. The search paths of each binary are looked at on its
 // own: a library that one binary finds through its rpath can still be a
 // problem for another binary that has none.
-func warnNeedsCache(libs []lib, paths map[string]searchPaths) {
+//
+// Nothing is said when the cache is copied into the image: the loader finds
+// the library then.
+func warnNeedsCache(libs []lib, paths map[string]searchPaths, withCache bool) {
+	if withCache {
+		return
+	}
 	for _, l := range libs {
 		if l.kind != kindLib {
 			continue
@@ -284,19 +289,11 @@ func underAny(path string, dirs []string) bool {
 	return false
 }
 
-// checkCopyPath refuses a path that cannot be written in a COPY line.
-func checkCopyPath(path string) error {
+// checkCopyPath refuses a path that cannot be written in a COPY line. what
+// names the kind of path in the message.
+func checkCopyPath(what, path string) error {
 	if strings.ContainsAny(path, badPathChars) {
-		return fmt.Errorf("unsupported library path %q", path)
-	}
-	return nil
-}
-
-// checkFolderPath refuses a folder that cannot be written in a Dockerfile
-// line: the statement that moves the tree there carries the path.
-func checkFolderPath(path string) error {
-	if strings.ContainsAny(path, badPathChars) {
-		return fmt.Errorf("the package folder %q cannot be used in a Dockerfile line", path)
+		return fmt.Errorf("the %s %q cannot be used in a Dockerfile line", what, path)
 	}
 	return nil
 }
@@ -345,10 +342,10 @@ func writeComments(w io.Writer, libs []lib) error {
 // printable in one.
 func writeDockerfile(w io.Writer, libs []lib, stage string) error {
 	for _, l := range libs {
-		if err := checkCopyPath(l.dest); err != nil {
+		if err := checkCopyPath("library", l.dest); err != nil {
 			return err
 		}
-		if err := checkCopyPath(l.src); err != nil {
+		if err := checkCopyPath("library", l.src); err != nil {
 			return err
 		}
 	}
@@ -390,7 +387,7 @@ func packageLibs(libs []lib, binaries []string, dir string) (string, error) {
 	// The statement the tool prints carries this path, so it has to be
 	// printable in a Dockerfile line. The path the user gave is checked
 	// before anything is written; this one is what ends up in the line.
-	if err := checkFolderPath(treeAbs); err != nil {
+	if err := checkCopyPath("package folder", treeAbs); err != nil {
 		return "", err
 	}
 	if len(libs) == 0 && len(binaries) == 0 {
@@ -610,10 +607,10 @@ func writeJSON(w io.Writer, binaries []string, libs []lib, stage string) error {
 	for _, l := range libs {
 		// The copy field is a Dockerfile line, so the paths have to be
 		// printable in one.
-		if err := checkCopyPath(l.dest); err != nil {
+		if err := checkCopyPath("library", l.dest); err != nil {
 			return err
 		}
-		if err := checkCopyPath(l.src); err != nil {
+		if err := checkCopyPath("library", l.src); err != nil {
 			return err
 		}
 		report.Libraries = append(report.Libraries, jsonLib{

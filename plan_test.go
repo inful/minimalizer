@@ -310,6 +310,25 @@ func TestSearchPathsForExpandsTheBracedOrigin(t *testing.T) {
 	}
 }
 
+// captureStderr runs f and returns what it wrote to stderr.
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	f()
+	_ = w.Close()
+	os.Stderr = old
+	var sb strings.Builder
+	if _, err := io.Copy(&sb, r); err != nil {
+		t.Fatal(err)
+	}
+	return sb.String()
+}
+
 func TestWarnNeedsCache(t *testing.T) {
 	libs := []lib{{
 		kind:   kindLib,
@@ -324,26 +343,31 @@ func TestWarnNeedsCache(t *testing.T) {
 		"/out/worker": {},
 	}
 
-	var sb strings.Builder
-	old := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stderr = w
-	warnNeedsCache(libs, paths)
-	_ = w.Close()
-	os.Stderr = old
-	if _, err := io.Copy(&sb, r); err != nil {
-		t.Fatal(err)
-	}
+	out := captureStderr(t, func() { warnNeedsCache(libs, paths, false) })
 
-	out := sb.String()
 	if !strings.Contains(out, "/opt/lib/libfoo.so") {
 		t.Errorf("warning = %q, want it to name the library", out)
 	}
 	if !strings.Contains(out, "/out/worker") {
 		t.Errorf("warning = %q, want it to name the binary that needs the cache", out)
+	}
+}
+
+func TestWarnNeedsCacheIsQuietWhenTheCacheIsCopied(t *testing.T) {
+	// With --ld-cache the cache is in the image, so the loader finds the
+	// library: there is nothing to warn about.
+	libs := []lib{{
+		kind:   kindLib,
+		soname: "libfoo.so",
+		dest:   "/opt/lib/libfoo.so",
+		usedBy: []string{"/out/app"},
+	}}
+	paths := map[string]searchPaths{"/out/app": {}}
+
+	out := captureStderr(t, func() { warnNeedsCache(libs, paths, true) })
+
+	if out != "" {
+		t.Errorf("warning = %q, want none: the cache is copied", out)
 	}
 }
 
@@ -726,6 +750,35 @@ func TestWritePackage(t *testing.T) {
 	want := "COPY --from=builder /out/rootfs/ /\n"
 	if !strings.Contains(sb.String(), want) {
 		t.Errorf("output %q does not contain %q", sb.String(), want)
+	}
+}
+
+func TestWriteJSONHoldsTheInterpreterAndTheCache(t *testing.T) {
+	libs := []lib{
+		{kind: kindInterp, dest: "/lib64/ld-linux-x86-64.so.2", src: "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"},
+		{kind: kindCache, dest: "/etc/ld.so.cache", src: "/etc/ld.so.cache"},
+	}
+	var sb strings.Builder
+	if err := writeJSON(&sb, []string{"/app"}, libs, "builder"); err != nil {
+		t.Fatalf("writeJSON() error = %v", err)
+	}
+	var report jsonReport
+	if err := json.Unmarshal([]byte(sb.String()), &report); err != nil {
+		t.Fatalf("the output is not valid JSON: %v", err)
+	}
+	if len(report.Libraries) != 2 {
+		t.Fatalf("libraries = %v, want two entries", report.Libraries)
+	}
+	if report.Libraries[0].Kind != kindInterp || report.Libraries[0].Soname != "" {
+		t.Errorf("library = %+v, want the interpreter", report.Libraries[0])
+	}
+	if report.Libraries[1].Kind != kindCache {
+		t.Errorf("library = %+v, want the cache", report.Libraries[1])
+	}
+	// The copy field is a Dockerfile line: it has to name both paths.
+	want := "COPY --from=builder /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2"
+	if report.Libraries[0].Copy != want {
+		t.Errorf("copy = %q, want %q", report.Libraries[0].Copy, want)
 	}
 }
 

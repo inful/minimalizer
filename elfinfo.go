@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
+	"sync"
 )
 
 // elfInfo is what the tool needs to know about the binary itself.
@@ -16,6 +18,26 @@ type elfInfo struct {
 	runpath []string    // DT_RUNPATH: only the libraries the binary asks for
 	machine elf.Machine // the architecture the binary is built for
 }
+
+// stageMachine is the architecture of the stage the tool runs in. The tool
+// itself is built for it, so its own binary is the reference.
+//
+// It is elf.EM_NONE when the machine cannot be told, for example when the
+// tool does not run on Linux. A binary of another machine cannot be listed
+// by the loader of this stage, so it is skipped.
+//
+// The answer is worked out once: it is asked for every binary of a run.
+var stageMachine = sync.OnceValue(func() elf.Machine {
+	exe, err := os.Executable()
+	if err != nil {
+		return elf.EM_NONE
+	}
+	info, err := readELF(exe)
+	if err != nil {
+		return elf.EM_NONE
+	}
+	return info.machine
+})
 
 // readELF reads the parts of the binary we care about. It refuses anything
 // that is not an ELF file, so a script is never handed to the loader.

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"debug/elf"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"slices"
@@ -8,14 +10,40 @@ import (
 	"testing"
 )
 
-// writeELF writes a file that starts with the ELF magic, so the tool treats
-// it as a binary.
+// writeELF writes a file the tool reads as a binary: an ELF header for the
+// machine of this host, so the tool does not skip it as a binary of another
+// machine.
 func writeELF(t *testing.T, path string) string {
 	t.Helper()
-	if err := os.WriteFile(path, []byte("\x7fELF\x02\x01\x01"), 0o755); err != nil {
+	return writeELFFor(t, path, stageMachine())
+}
+
+// writeELFFor writes an ELF header for the given machine. The file has no
+// program header and no section: it holds nothing but the header the tool
+// reads.
+func writeELFFor(t *testing.T, path string, machine elf.Machine) string {
+	t.Helper()
+	h := make([]byte, 64)
+	copy(h, []byte{0x7f, 'E', 'L', 'F', 2, 1, 1, 0})
+	binary.LittleEndian.PutUint16(h[16:], 2)               // e_type: ET_EXEC
+	binary.LittleEndian.PutUint16(h[18:], uint16(machine)) // e_machine
+	binary.LittleEndian.PutUint32(h[20:], 1)               // e_version
+	binary.LittleEndian.PutUint16(h[52:], 64)              // e_ehsize
+	binary.LittleEndian.PutUint16(h[54:], 56)              // e_phentsize
+	binary.LittleEndian.PutUint16(h[58:], 64)              // e_shentsize
+	if err := os.WriteFile(path, h, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// otherMachine is a machine that is not the one of this host.
+func otherMachine(t *testing.T) elf.Machine {
+	t.Helper()
+	if stageMachine() == elf.EM_AARCH64 {
+		return elf.EM_X86_64
+	}
+	return elf.EM_AARCH64
 }
 
 func TestExpandBinaries(t *testing.T) {
@@ -105,6 +133,46 @@ func TestExpandBinariesRefusesWhatItCannotUse(t *testing.T) {
 				t.Errorf("expandBinaries() error = %v, want it to mention %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestExpandBinariesSkipsAFileItCannotRead(t *testing.T) {
+	// A file with the ELF magic and nothing else: the tool reads the
+	// header, so it cannot use the file. It must be skipped, not fatal:
+	// a folder of a distributor can hold one.
+	dir := t.TempDir()
+	writeELF(t, filepath.Join(dir, "app"))
+	if err := os.WriteFile(filepath.Join(dir, "broken"), []byte("\x7fELF"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := expandBinaries([]string{filepath.Join(dir, "*")})
+	if err != nil {
+		t.Fatalf("expandBinaries() error = %v", err)
+	}
+	want := []string{filepath.Join(dir, "app")}
+	if !slices.Equal(got, want) {
+		t.Errorf("binaries = %v, want %v", got, want)
+	}
+}
+
+func TestExpandBinariesSkipsABinaryOfAnotherMachine(t *testing.T) {
+	// The loader of this stage cannot list the libraries of a binary
+	// built for another machine, so the file is skipped.
+	if stageMachine() == elf.EM_NONE {
+		t.Skip("the machine of this host cannot be told")
+	}
+	dir := t.TempDir()
+	writeELF(t, filepath.Join(dir, "app"))
+	writeELFFor(t, filepath.Join(dir, "foreign"), otherMachine(t))
+
+	got, err := expandBinaries([]string{filepath.Join(dir, "*")})
+	if err != nil {
+		t.Fatalf("expandBinaries() error = %v", err)
+	}
+	want := []string{filepath.Join(dir, "app")}
+	if !slices.Equal(got, want) {
+		t.Errorf("binaries = %v, want %v", got, want)
 	}
 }
 
@@ -285,20 +353,9 @@ func TestCheckPackageForm(t *testing.T) {
 	}
 }
 
-func TestIsELF(t *testing.T) {
+func TestReadELFRefusesAFileThatIsNotThere(t *testing.T) {
 	dir := t.TempDir()
-	bin := writeELF(t, filepath.Join(dir, "app"))
-	if !isELF(bin) {
-		t.Errorf("isELF(%q) = false, want true", bin)
-	}
-	other := filepath.Join(dir, "notelf")
-	if err := os.WriteFile(other, []byte("hello"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if isELF(other) {
-		t.Errorf("isELF(%q) = true, want false", other)
-	}
-	if isELF(filepath.Join(dir, "nowhere")) {
-		t.Error("isELF() of a file that does not exist = true, want false")
+	if _, err := readELF(filepath.Join(dir, "nowhere")); err == nil {
+		t.Error("readELF() of a file that does not exist = nil, want an error")
 	}
 }

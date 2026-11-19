@@ -7,8 +7,42 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestLddDepsSaysTheInterpreterIsMissing(t *testing.T) {
+	// The binary names an interpreter that this stage does not have.
+	_, err := lddDeps("/bin/ls", elfInfo{interp: "/nonexistent/ld.so", needed: []string{"libc.so.6"}, machine: stageMachine()})
+	if err == nil || !strings.Contains(err.Error(), "does not exist in this stage") {
+		t.Errorf("lddDeps() error = %v, want it to say the interpreter is missing", err)
+	}
+}
+
+func TestLddDepsSaysTheLibraryIsMissing(t *testing.T) {
+	// A loader that reports a library it could not load.
+	dir := t.TempDir()
+	loader := filepath.Join(dir, "ld.so")
+	if err := os.WriteFile(loader, []byte("#!/bin/sh\necho '\tlibfoo.so.1 => not found'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := lddDeps("/bin/ls", elfInfo{interp: loader, needed: []string{"libfoo.so.1"}, machine: stageMachine()})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("lddDeps() error = %v, want it to name the missing library", err)
+	}
+}
+
+func TestLddDepsSaysTheBinaryIsOfAnotherMachine(t *testing.T) {
+	// The loader of this stage cannot list the libraries of a binary
+	// built for another machine.
+	if stageMachine() == elf.EM_NONE {
+		t.Skip("the machine of this host cannot be told")
+	}
+	_, err := lddDeps("/bin/ls", elfInfo{interp: "/lib64/ld-linux-x86-64.so.2", needed: []string{"libc.so.6"}, machine: otherMachine(t)})
+	if err == nil || !strings.Contains(err.Error(), "this stage is") {
+		t.Errorf("lddDeps() error = %v, want it to say the binary is of another machine", err)
+	}
+}
 
 func TestDefaultLoaderHasNoLoaderForAnotherMachine(t *testing.T) {
 	// A loader of another architecture would answer with a wrong list, so

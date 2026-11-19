@@ -7,6 +7,7 @@
 package main
 
 import (
+	"debug/elf"
 	"errors"
 	"flag"
 	"fmt"
@@ -124,7 +125,7 @@ func validate(opts *options) error {
 		if err != nil {
 			return fmt.Errorf("cannot resolve %s: %w", opts.packageDir, err)
 		}
-		if err := checkFolderPath(abs); err != nil {
+		if err := checkCopyPath("package folder", abs); err != nil {
 			return err
 		}
 		opts.packageDir = abs
@@ -162,7 +163,10 @@ func checkPackageForm(dir string, binaries []string) error {
 		// also what a binary that is not built yet looks like, so the
 		// message names both.
 		for _, other := range binaries {
-			if other != b && isELF(other) {
+			if other == b {
+				continue
+			}
+			if _, err := readELF(other); err == nil {
 				return fmt.Errorf("%s does not exist. The tree goes to %s; if it is the folder of the tree, write --package=DIR to name another folder, and if it is a binary, it has to be there. The binaries can also be named with a pattern", b, dir)
 			}
 		}
@@ -175,13 +179,17 @@ const globChars = "*?["
 
 // expandBinaries turns the arguments into the list of binaries to analyse.
 // An argument with a glob character in it is a pattern: every binary it
-// matches is analysed. A file that is not a binary and a folder are skipped,
-// so a pattern can point at a folder of a distributor.
+// matches is analysed. A file that is not a binary, a binary of another
+// machine and a folder are skipped, so a pattern can point at a folder of a
+// distributor.
 //
 // A pattern that matches nothing is an error: a typo must not leave the
 // image without the binaries.
 func expandBinaries(args []string) ([]string, error) {
 	out := make([]string, 0, len(args))
+	// The machine of this stage: a binary of another one cannot be
+	// listed by the loader here.
+	host := stageMachine()
 	for _, arg := range args {
 		if !strings.ContainsAny(arg, globChars) {
 			out = append(out, arg)
@@ -218,8 +226,15 @@ func expandBinaries(args []string) ([]string, error) {
 				// a folder or something else: not a binary
 				continue
 			}
-			if !isELF(m) {
+			info, err := readELF(m)
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "minimalizer: warning: %s is not a binary or cannot be read, it is skipped\n", m)
+				continue
+			}
+			if host != elf.EM_NONE && info.machine != host {
+				// The loader of this stage cannot list the libraries of
+				// a binary built for another machine.
+				fmt.Fprintf(os.Stderr, "minimalizer: warning: %s is built for %s, this stage is %s, it is skipped\n", m, info.machine, host)
 				continue
 			}
 			out = append(out, m)
@@ -237,20 +252,6 @@ func expandBinaries(args []string) ([]string, error) {
 		}
 	}
 	return slices.Compact(slices.Sorted(slices.Values(out))), nil
-}
-
-// isELF reports whether the file starts with the ELF magic.
-func isELF(path string) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = f.Close() }()
-	var magic [4]byte
-	if _, err := io.ReadFull(f, magic[:]); err != nil {
-		return false
-	}
-	return string(magic[:]) == "\x7fELF"
 }
 
 // usage prints how the tool is called.
