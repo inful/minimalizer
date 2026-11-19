@@ -125,7 +125,7 @@ func validate(opts *options) error {
 		if err != nil {
 			return fmt.Errorf("cannot resolve %s: %w", opts.packageDir, err)
 		}
-		if err := checkFolderPath(abs); err != nil {
+		if err := checkCopyPath("package folder", abs); err != nil {
 			return err
 		}
 		opts.packageDir = abs
