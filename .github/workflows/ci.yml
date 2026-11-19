@@ -179,3 +179,53 @@ jobs:
           docker build -t minimalizer-e2e .
           # the image has to run: the binary and its libraries are in it
           docker run --rm minimalizer-e2e /bin/ls
+
+      - name: Build the image from the statements of the default mode
+        # The default mode prints one COPY per library. That mode is built
+        # here as well, so a statement that does not build fails in this
+        # repository and not in the build of a user.
+        run: |
+          set -euo pipefail
+          cd /tmp/e2e
+          # The statements are made inside the base the image is built
+          # from: they name the paths of that base.
+          docker run --rm -v "$PWD":/w debian:bookworm-slim sh -c '
+            cp /w/minimalizer /tmp/minimalizer
+            chmod +x /tmp/minimalizer
+            /tmp/minimalizer "/bin/ls*" | grep "^COPY" > /w/copy-libs.txt
+          '
+          cat copy-libs.txt
+          {
+            echo "FROM debian:bookworm-slim AS builder"
+            echo "COPY minimalizer /usr/local/bin/minimalizer"
+            echo "FROM scratch"
+            echo "COPY --from=builder /bin/ls /bin/ls"
+            cat copy-libs.txt
+            echo 'ENTRYPOINT ["/bin/ls"]'
+          } > Dockerfile.libs
+          docker build -f Dockerfile.libs -t minimalizer-e2e-libs .
+          # the image has to run: the binary and its libraries are in it
+          docker run --rm minimalizer-e2e-libs
+
+      - name: Check the exit codes
+        # The exit code is the contract of the tool: 2 for a command that
+        # is wrong, 1 for a run that failed. A user script reads it.
+        run: |
+          set -euo pipefail
+          cd /tmp/e2e
+          set +e
+          # a pattern that matches nothing: the command is wrong
+          ./minimalizer '/nowhere/*' >/dev/null 2>&1
+          wrong=$?
+          # a binary that is not there: the run failed
+          ./minimalizer /nonexistent/binary >/dev/null 2>&1
+          failed=$?
+          set -e
+          if [ "$wrong" != 2 ]; then
+            echo "a pattern that matches nothing exited $wrong, want 2"
+            exit 1
+          fi
+          if [ "$failed" != 1 ]; then
+            echo "a binary that is not there exited $failed, want 1"
+            exit 1
+          fi
